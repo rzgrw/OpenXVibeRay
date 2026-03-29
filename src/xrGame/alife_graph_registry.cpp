@@ -208,5 +208,12 @@ void CALifeGraphRegistry::remove(CSE_ALifeDynamicObject* object, GameGraph::_GRA
         m_objects[game_vertex_id].objects().remove(object->ID, true);
     }
     if (update && m_level)
-        level().remove(object, ai().game_graph().vertex(game_vertex_id)->level_id() != level().level_id());
+    {
+        // no_assert=true: missing entry is non-fatal (object may not have been
+        // added to the level registry, e.g. cross-level teleport in CoC).
+        if (ai().game_graph().vertex(game_vertex_id)->level_id() == level().level_id() &&
+            !level().object(object->ID, true))
+            Msg("! ALife: object [%d] not found in level registry during remove", object->ID);
+        level().remove(object, true);
+    }
 }
