@@ -4,6 +4,7 @@
 !.appveyor*
 !.editorconfig
 !.vscode
+!.claude/
 
 # exclude binaries and temporary files
 [Bb]in/
