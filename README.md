@@ -77,11 +77,34 @@ cmake -B build \
 cmake --build build -j10
 ```
 
-Binaries go to `bin/arm64/Release/`. Full setup guide: [docs/macos-dev-setup.md](docs/macos-dev-setup.md)
+Binaries go to `bin/arm64/Release/`.
 
 ### Windows / Linux
 
 Follow the upstream [OpenXRay build instructions](https://github.com/OpenXRay/xray-16/wiki). All upstream platforms remain supported.
+
+## Running
+
+**You need original game files.** This is an engine only — it does not include any game data. You must own a copy of S.T.A.L.K.E.R. (available on [Steam](https://store.steampowered.com/app/41700/), [GOG](https://www.gog.com/game/stalker_call_of_pripyat)) or use [Call of Chernobyl](https://www.moddb.com/mods/call-of-chernobyl) (standalone free-play mod).
+
+### Game data setup (portable mode)
+
+1. Copy your game files to a directory (e.g. `~/stalker-data/`)
+2. Make sure `fsgame.ltx` is in the root of that directory
+3. Copy the OpenGL shaders from the repo into the game data:
+   ```bash
+   cp -r res/gamedata/shaders/gl/ ~/stalker-data/gamedata/shaders/gl/
+   ```
+4. Launch from the game data directory:
+   ```bash
+   cd ~/stalker-data/
+   DYLD_LIBRARY_PATH=/path/to/OpenXVibeRay/bin/arm64/Release \
+     /path/to/OpenXVibeRay/bin/arm64/Release/xr_3da
+   ```
+
+The engine uses "portable mode" — it looks for `fsgame.ltx` in the current working directory and loads all game data relative to that.
+
+Full setup guide with troubleshooting: [docs/macos-dev-setup.md](docs/macos-dev-setup.md)
 
 ## Project Structure
 
