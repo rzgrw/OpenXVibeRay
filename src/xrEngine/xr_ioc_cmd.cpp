@@ -232,7 +232,7 @@ void CCC_LoadCFG::Execute(pcstr args)
     }
     else
     {
-        Msg("! Cannot open script file [%s]", cfg_full_name);
+        Msg("~ Cannot open script file [%s]", cfg_full_name);
     }
 }
 
@@ -618,6 +618,23 @@ public:
         GetToken();
         if (!tokens)
             return;
+        // Check if args matches any available token; if not, fall back to the
+        // first device instead of triggering InvalidSyntax().
+        bool found = false;
+        for (const xr_token* t = tokens; t->name; ++t)
+        {
+            if (xr_strcmp(t->name, args) == 0)
+            {
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+        {
+            Msg("~ snd_device [%s] not found, falling back to [%s]", args, tokens[0].name);
+            snd_device_id = tokens[0].id;
+            return;
+        }
         inherited::Execute(args);
     }
 
