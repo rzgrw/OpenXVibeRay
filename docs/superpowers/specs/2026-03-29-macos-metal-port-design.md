@@ -298,10 +298,13 @@ Multiple engine headers have hardcoded `friend class` declarations for each back
 
 #### Module Registration
 
-The renderer array size must change in **three** files (currently hardcoded to 2):
+The renderer array size must change in **six** files (currently hardcoded to 2):
 - `src/xr_3da/entry_point.cpp` — array declaration
 - `src/xrEngine/EngineAPI.h` — `CreateRendererList` signature
 - `src/xrEngine/EngineAPI.cpp` — `CreateRendererList` definition
+- `src/xrEngine/Engine.h` — `CEngine::Initialize` signature
+- `src/xrEngine/Engine.cpp` — `CEngine::Initialize` definition
+- `src/xrEngine/x_ray.h` + `x_ray.cpp` — `CApplication` constructor
 
 Recommended: change from `std::array<RendererModule*, 2>` to `std::span<RendererModule*>` to avoid hardcoding the count.
 
