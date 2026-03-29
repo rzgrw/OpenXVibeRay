@@ -112,7 +112,12 @@ void CALifeGraphRegistry::attach(CSE_Abstract& object, CSE_ALifeInventoryItem* i
     if (alife_query)
         remove(smart_cast<CSE_ALifeDynamicObject*>(item), game_vertex_id);
     else
-        level().remove(smart_cast<CSE_ALifeDynamicObject*>(item));
+    {
+        auto* dynamic_item = smart_cast<CSE_ALifeDynamicObject*>(item);
+        if (!level().object(dynamic_item->ID, true))
+            Msg("! ALife: object [%d] not found in level registry during attach/remove", dynamic_item->ID);
+        level().remove(dynamic_item, true);
+    }
 
     CSE_ALifeDynamicObject* dynamic_object = smart_cast<CSE_ALifeDynamicObject*>(&object);
     R_ASSERT2(!alife_query || dynamic_object, "Cannot attach an item to a non-alife object object");
@@ -209,8 +214,8 @@ void CALifeGraphRegistry::remove(CSE_ALifeDynamicObject* object, GameGraph::_GRA
     }
     if (update && m_level)
     {
-        // no_assert=true: missing entry is non-fatal (object may not have been
-        // added to the level registry, e.g. cross-level teleport in CoC).
+        // no_assert=true: missing entry is non-fatal (object may not be present
+        // in the level registry even on a same-level move, e.g. CoC script teleport).
         if (ai().game_graph().vertex(game_vertex_id)->level_id() == level().level_id() &&
             !level().object(object->ID, true))
             Msg("! ALife: object [%d] not found in level registry during remove", object->ID);
