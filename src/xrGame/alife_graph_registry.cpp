@@ -200,7 +200,12 @@ void CALifeGraphRegistry::remove(CSE_ALifeDynamicObject* object, GameGraph::_GRA
                 game_vertex_id);
         }
 #endif
-        m_objects[game_vertex_id].objects().remove(object->ID);
+        // ALife runs single-threaded; count() before remove() is race-free.
+        // no_assert=true: missing entry is non-fatal (object may have been
+        // relocated by another path before this remove runs, e.g. in CoC).
+        if (!m_objects[game_vertex_id].objects().objects().count(object->ID))
+            Msg("! ALife: object [%d] not found at graph vertex [%d] during remove", object->ID, game_vertex_id);
+        m_objects[game_vertex_id].objects().remove(object->ID, true);
     }
     if (update && m_level)
         level().remove(object, ai().game_graph().vertex(game_vertex_id)->level_id() != level().level_id());
