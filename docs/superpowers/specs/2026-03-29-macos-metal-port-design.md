@@ -84,8 +84,9 @@ src/Layers/
 ├── xrRenderMetal/              # Metal hardware abstraction (NEW)
 │   ├── metalHW.h               # CHW class — MTLDevice, command queue, layer
 │   ├── metalHW.cpp
-│   ├── metalHW_Apple.mm        # Thin ObjC++ bridge for CAMetalLayer setup
-│   ├── metalState.h            # Pipeline state object cache
+│   ├── metalHW_Apple.mm        # Thin ObjC++ bridge for CAMetalLayer via SDL_Metal_CreateView()
+│   ├── CommonTypes.h           # CRITICAL: Type aliases (D3D_VIEWPORT, ID3DState, buffer handles, etc.)
+│   ├── metalState.h            # PSO cache + ID3DState typedef target (dual role)
 │   ├── metalState.cpp
 │   ├── metalConstantBuffer.h   # MTLBuffer-backed constant buffers
 │   ├── metalConstantBuffer.cpp
@@ -98,9 +99,12 @@ src/Layers/
 │   ├── metalShaderCompiler.cpp
 │   ├── metalVertexInput.h      # MTLVertexDescriptor from X-Ray vertex declarations
 │   ├── metalVertexInput.cpp
+│   ├── metalOcclusionQuery.h   # MTLVisibilityResultBuffer wrapper
+│   ├── metalOcclusionQuery.cpp
 │   └── CMakeLists.txt
 │
 ├── xrRenderPC_Metal/           # Metal render module (NEW)
+│   ├── stdafx.h                # Precompiled header: USE_METAL, Metal includes, CommonTypes.h
 │   ├── xrRender_Metal.h        # RMetalRendererModule : RendererModule
 │   ├── xrRender_Metal.cpp
 │   ├── metal_rendertarget.h    # G-buffer, shadow maps, post-FX targets
@@ -111,7 +115,8 @@ src/Layers/
 │   ├── metal_rendertarget_phase_ssao.cpp
 │   ├── metal_shaders.cpp       # Shader loading via SPIRV-Cross
 │   ├── entry_point.cpp         # GetRendererModule() factory
-│   └── CMakeLists.txt
+│   ├── dxImGuiRender.cpp       # ImGui Metal integration
+│   └── CMakeLists.txt          # ~400 lines, includes ~200 shared sources from xrRender/, xrRender_R2/
 ```
 
 ### Hardware Abstraction Layer (`metalHW`)
@@ -151,31 +156,67 @@ public:
 };
 ```
 
-**CAMetalLayer setup** requires a thin Objective-C++ bridge (`metalHW_Apple.mm`):
-- SDL2 provides access to the NSWindow/NSView via `SDL_GetWindowWMInfo`
-- Create CAMetalLayer and attach to view's layer
+**Metal view setup** via SDL2's native Metal support (`metalHW_Apple.mm`):
+- Use `SDL_Metal_CreateView()` (available since SDL 2.0.12) to get a `CAMetalLayer` directly
+- This is simpler and more robust than manual NSView layer manipulation via `SDL_GetWindowWMInfo`
 - This is the only .mm file needed; everything else uses metal-cpp (C++ headers)
+
+### CommonTypes.h — Critical Type Aliases
+
+The shared `xrRender` code depends on type aliases defined per-backend. The GL backend provides these in `xrRenderGL/CommonTypes.h`. The Metal backend must provide equivalent mappings:
+
+| Shared code type | Metal equivalent |
+|---|---|
+| `D3D_CLEAR_FLAG` | Enum mapping to Metal clear values |
+| `D3D_COMPARISON_FUNC` | `MTL::CompareFunction` |
+| `D3D_VIEWPORT` | Struct wrapping Metal viewport |
+| `D3D_QUERY` | Enum for occlusion query types |
+| `ID3DState` | `metalState` (see below) |
+| `IndexBufferHandle` | `MTL::Buffer*` wrapper |
+| `VertexBufferHandle` | `MTL::Buffer*` wrapper |
+| `ConstantBufferHandle` | `MTL::Buffer*` wrapper |
+| `VertexElement`, `InputElementDesc` | Metal vertex attribute descriptors |
+
+Without this file, none of the shared `xrRender` or `xrRender_R2` code will compile for the Metal backend.
+
+### metalState — Dual Role (ID3DState + PSO Cache)
+
+`metalState` serves two purposes:
+1. **`ID3DState` typedef target** — shared code calls `ID3DState::Apply()` to set render state. In GL, this calls individual `glEnable`/`glBlendFunc` etc. In Metal, `Apply()` must look up or create the correct `MTLRenderPipelineState` + `MTLDepthStencilState` combo since Metal bakes all state into pipeline objects.
+2. **PSO cache** — maintains `std::unordered_map<PSOHash, MTL::RenderPipelineState*>` for reuse.
+
+### Occlusion Queries
+
+The shared render code uses GPU occlusion queries extensively (`xrRender/r__occlusion.cpp`). Metal handles these differently via `MTLVisibilityResultBuffer` on render pass descriptors, not standalone query objects. `metalOcclusionQuery` wraps this:
+- Allocate a `MTLBuffer` for visibility results
+- Configure `visibilityResultBuffer` on `MTLRenderPassDescriptor`
+- Read back results after render pass completes
 
 ### Shader Pipeline
 
-#### Build-time compilation (primary path)
+#### Important: Shader Preprocessing
+
+OpenXRay's GLSL shaders are **not standard GLSL**. They use the engine's custom preprocessor with `#include` directives, engine-specific macros, and non-standard extensions. `glslang` cannot consume them directly.
+
+The pipeline must include an X-Ray shader preprocessing step:
 
 ```
-GLSL source files (res/gamedata/shaders/gl/*.glsl)
-    → glslang (GLSL → SPIR-V bytecode)
+X-Ray GLSL sources (res/gamedata/shaders/gl/*.glsl)
+    → X-Ray shader preprocessor (resolve #includes, expand engine macros)
+    → glslang (standard GLSL → SPIR-V bytecode)
     → SPIRV-Cross (SPIR-V → Metal Shading Language)
     → Metal compiler (MSL → .metallib archive)
 ```
 
-A CMake custom command runs this pipeline during build. The `.metallib` files are bundled with the app.
+The engine already has a shader preprocessor for the GL backend — we reuse it for the preprocessing step, then hand off standard GLSL to glslang.
 
-#### Runtime compilation (mod support fallback)
+#### Build-time compilation (primary path)
 
-For modded shaders not in the pre-compiled set:
-1. Load GLSL source at runtime
-2. Use bundled SPIRV-Cross library to translate GLSL → SPIR-V → MSL
-3. Compile MSL to `MTLFunction` via `MTLDevice::newLibrary(source:)`
-4. Cache the compiled library on disk for next launch
+A CMake custom command runs the full pipeline above during build. The `.metallib` files are bundled with the app.
+
+#### Runtime compilation (deferred to later phase)
+
+Runtime shader compilation for mod support (SPIRV-Cross fallback path) is deferred to a follow-up update. Getting the build-time path working is the priority for SP2. Mods that don't add custom shaders will work immediately.
 
 #### Shader resource binding
 
@@ -236,12 +277,38 @@ X-Ray's render phases map to Metal render passes:
 
 Each phase becomes a `MTLRenderPassDescriptor` with load/store actions configured for optimal tile memory usage on Apple Silicon.
 
-### Module Registration
+### Build System Integration
 
-In `src/xr_3da/entry_point.cpp`:
+#### RENDER_NAMESPACE
+
+Each backend compiles with a unique `RENDER_NAMESPACE` define (e.g., `render_gl`, `render_r4`). This namespaces all shared code so the same `.cpp` files compile into different symbols per backend.
+
+The Metal CMakeLists.txt must define: `RENDER_NAMESPACE=render_metal`
+
+#### Friend Declarations
+
+Multiple engine headers have hardcoded `friend class` declarations for each backend namespace. These files must add `friend class xray::render::render_metal::dxSomethingRender;` lines:
+
+- `src/xrEngine/StatGraph.h`
+- `src/xrEngine/GameFont.h`
+- `src/xrEngine/Rain.h`
+- `src/xrEngine/thunderbolt.h`
+- `src/xrEngine/Environment.h`
+- `src/xrEngine/xr_efflensflare.h`
+
+#### Module Registration
+
+The renderer array size must change in **three** files (currently hardcoded to 2):
+- `src/xr_3da/entry_point.cpp` — array declaration
+- `src/xrEngine/EngineAPI.h` — `CreateRendererList` signature
+- `src/xrEngine/EngineAPI.cpp` — `CreateRendererList` definition
+
+Recommended: change from `std::array<RendererModule*, 2>` to `std::span<RendererModule*>` to avoid hardcoding the count.
+
+In `entry_point.cpp`:
 
 ```cpp
-std::array<RendererModule*, 3> s_render_modules =
+std::array s_render_modules =
 {
 #ifdef XR_PLATFORM_WINDOWS
     xray::render::render_r4::GetRendererModule(),   // DX11
@@ -254,6 +321,20 @@ std::array<RendererModule*, 3> s_render_modules =
 ```
 
 Metal is preferred over GL on macOS. GL remains as fallback.
+
+#### CBackend #ifdef Audit
+
+The shared `R_Backend.h` and `R_Backend_Runtime.h` files have **many** `#ifdef USE_DX11` / `#elif defined(USE_OGL)` branches beyond just render targets and shader binding. A systematic audit is required. All sites include:
+
+- Render target arrays
+- Constant buffer arrays (`m_aVertexConstants`, etc.)
+- Primitive topology
+- Input layout
+- Shader slots (ps, vs, gs, and GL's pp for linked programs)
+- Texture binding arrays
+- State application calls
+
+Without `USE_METAL` branches, `R_Backend.h` line 104 emits `#error No graphics API selected or enabled!`. Every `#ifdef` site must be addressed.
 
 ### Reused Code (unchanged)
 
@@ -356,6 +437,8 @@ Viberay.app/
 | Apple Silicon GPU quirks (tile-based rendering) | Low | Medium | Follow Apple's Metal best practices for TBDR |
 | Game data path differences vs Windows | Low | Low | Already handled by POSIX abstractions |
 | OpenGL baseline has unfound bugs | Medium | Low | SP1 catches these before Metal work begins |
+| Shared code D3D assumptions (D3DCULL_CCW, D3DBLEND, etc.) | Medium | Medium | GL handles via d3d9compat.hpp shims; Metal needs same + careful testing |
+| Shader preprocessing step adds scope | Medium | Medium | Reuse engine's existing preprocessor; test early with a few shaders |
 
 ## Non-Goals
 
