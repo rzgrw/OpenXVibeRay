@@ -5,3 +5,7 @@ if (WIN32)
 endif()
 
 add_subdirectory(xrRenderPC_GL)
+
+if (APPLE)
+    add_subdirectory(xrRenderPC_Metal)
+endif()
