@@ -2,7 +2,8 @@ add_compile_definitions(
     $<$<CONFIG:ReleaseMasterGold>:MASTER_GOLD>
     $<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:XRAY_STATIC_BUILD>
     $<$<CONFIG:ReleaseMasterGold>:XRAY_EXCEPTIONS=0>
-    $<$<NOT:$<CONFIG:ReleaseMasterGold>>:XRAY_EXCEPTIONS=1>
+    $<$<AND:$<NOT:$<CONFIG:ReleaseMasterGold>>,$<NOT:$<PLATFORM_ID:Darwin>>>:XRAY_EXCEPTIONS=1>
+    $<$<PLATFORM_ID:Darwin>:XRAY_EXCEPTIONS=0>
 )
 
 add_compile_options(${XRAY_ENABLE_WARNINGS})
