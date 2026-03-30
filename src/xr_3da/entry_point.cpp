@@ -1,8 +1,15 @@
 #include "stdafx.h"
 
+#include <span>
+
 #include "xrEngine/x_ray.h"
 #include "xrGame/xrGame.h"
 #include "Include/xrRender/xrRender.h"
+
+// Task 5 will add render_metal to xrRender.h; forward-declare it here for now
+#ifdef XR_PLATFORM_APPLE
+namespace xray::render::render_metal { RendererModule* GetRendererModule(); }
+#endif
 
 #if !defined(XR_PLATFORM_WINDOWS)
 #include <unistd.h>
@@ -21,10 +28,13 @@ XR_EXPORT u32 NvOptimusEnablement = 0x00000001; // NVIDIA Optimus
 XR_EXPORT u32 AmdPowerXpressRequestHighPerformance = 0x00000001; // PowerXpress or Hybrid Graphics
 }
 
-std::array<RendererModule*, 2> s_render_modules =
+std::array s_render_modules =
 {
 #ifdef XR_PLATFORM_WINDOWS
     xray::render::render_r4::GetRendererModule(),
+#endif
+#ifdef XR_PLATFORM_APPLE
+    xray::render::render_metal::GetRendererModule(),
 #endif
     xray::render::render_gl::GetRendererModule(),
 };
