@@ -24,6 +24,10 @@ namespace render_gl
 {
 class dxThunderboltRender;
 }
+namespace render_metal
+{
+class dxThunderboltRender;
+}
 } // namespace xray::render
 
 struct ENGINE_API SThunderboltDesc
@@ -94,6 +98,7 @@ class ENGINE_API CEffect_Thunderbolt
 {
     friend class xray::render::render_r4::dxThunderboltRender;
     friend class xray::render::render_gl::dxThunderboltRender;
+    friend class xray::render::render_metal::dxThunderboltRender;
 
 protected:
     xr_vector<SThunderboltCollection*> collections;
