@@ -16,7 +16,7 @@ public:
         mtMaxPixelShaderTextures = 16,
         mtMaxVertexShaderTextures = 4,
         mtMaxGeometryShaderTextures = 16,
-#ifdef USE_DX11
+#if defined(USE_DX11)
         mtMaxHullShaderTextures = 16,
         mtMaxDomainShaderTextures = 16,
         mtMaxComputeShaderTextures = 16,
@@ -25,7 +25,7 @@ public:
         mtMaxPixelShaderTextures
         + mtMaxVertexShaderTextures
         + mtMaxGeometryShaderTextures
-#ifdef USE_DX11
+#if defined(USE_DX11)
         + mtMaxHullShaderTextures
         + mtMaxDomainShaderTextures
         + mtMaxComputeShaderTextures
@@ -49,6 +49,14 @@ public:
 #elif defined(USE_OGL)
     //	Since OGL doesn't differentiate between stages,
     //	distance between enum values should be the max for that stage.
+    enum ResourceShaderType
+    {
+        rstPixel = 0,	//	Default texture offset
+        rstVertex = rstPixel + mtMaxPixelShaderTextures,
+        rstGeometry = rstVertex + mtMaxVertexShaderTextures,
+    };
+#elif defined(USE_METAL)
+    //	Metal uses same layout as OGL
     enum ResourceShaderType
     {
         rstPixel = 0,	//	Default texture offset
@@ -80,6 +88,9 @@ public:
 #elif defined(USE_OGL)
     void surface_set(GLenum target, GLuint surf);
     [[nodiscard]] GLuint surface_get() const;
+#elif defined(USE_METAL)
+    void surface_set(uint64_t surf);
+    [[nodiscard]] uint64_t surface_get() const;
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -127,6 +138,13 @@ public:
         if (!flags.bLoaded)
             Load();
         return static_cast<ImTextureID>(pSurface);
+    }
+#elif defined(USE_METAL)
+    ImTextureID GetImTextureID()
+    {
+        if (!flags.bLoaded)
+            Load();
+        return reinterpret_cast<ImTextureID>(pSurface);
     }
 #else
 #   error No graphics API selected or enabled!
@@ -198,6 +216,16 @@ private:
     GLint m_height;
     GLuint desc_cache;
     GLenum desc;
+#elif defined(USE_METAL)
+    uint64_t pSurface{}; // MTL::Texture* placeholder
+    uint64_t pBuffer{};
+    // Sequence data
+    xr_vector<uint64_t> seqDATA;
+    // Description
+    u32 m_width;
+    u32 m_height;
+    uint64_t desc_cache;
+    u32 desc;
 #else
 #   error No graphics API selected or enabled!
 #endif

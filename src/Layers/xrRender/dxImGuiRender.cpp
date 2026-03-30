@@ -6,6 +6,8 @@
 #include <backends/imgui_impl_dx11.h>
 #elif defined(USE_OGL)
 #include <backends/imgui_impl_opengl3.h>
+#elif defined(USE_METAL)
+// TODO: Metal: include imgui Metal backend
 #endif
 
 namespace xray::render::RENDER_NAMESPACE
@@ -48,6 +50,8 @@ void dxImGuiRender::Frame()
     ImGui_ImplDX11_NewFrame();
 #elif defined(USE_OGL)
     ImGui_ImplOpenGL3_NewFrame();
+#elif defined(USE_METAL)
+    // TODO: Metal: ImGui_ImplMetal_NewFrame();
 #endif
 }
 
@@ -57,6 +61,8 @@ void dxImGuiRender::Render(ImDrawData* data)
     ImGui_ImplDX11_RenderDrawData(data);
 #elif defined(USE_OGL)
     ImGui_ImplOpenGL3_RenderDrawData(data);
+#elif defined(USE_METAL)
+    // TODO: Metal: ImGui_ImplMetal_RenderDrawData(data);
 #endif
 }
 
@@ -81,6 +87,8 @@ void dxImGuiRender::OnDeviceCreate(ImGuiContext* context)
     ImGui_ImplDX11_Init(HW.pDevice, HW.get_context(CHW::IMM_CTX_ID));
 #elif defined(USE_OGL)
     ImGui_ImplOpenGL3_Init();
+#elif defined(USE_METAL)
+    // TODO: Metal: ImGui_ImplMetal_Init();
 #endif
 }
 void dxImGuiRender::OnDeviceDestroy()
@@ -89,6 +97,8 @@ void dxImGuiRender::OnDeviceDestroy()
     ImGui_ImplDX11_Shutdown();
 #elif defined(USE_OGL)
     ImGui_ImplOpenGL3_Shutdown();
+#elif defined(USE_METAL)
+    // TODO: Metal: ImGui_ImplMetal_Shutdown();
 #endif
 }
 
@@ -98,6 +108,8 @@ void dxImGuiRender::OnDeviceResetBegin()
     ImGui_ImplDX11_InvalidateDeviceObjects();
 #elif defined(USE_OGL)
     ImGui_ImplOpenGL3_DestroyDeviceObjects();
+#elif defined(USE_METAL)
+    // TODO: Metal: destroy device objects
 #endif
 }
 
@@ -107,6 +119,8 @@ void dxImGuiRender::OnDeviceResetEnd()
     ImGui_ImplDX11_CreateDeviceObjects();
 #elif defined(USE_OGL)
     ImGui_ImplOpenGL3_CreateDeviceObjects();
+#elif defined(USE_METAL)
+    // TODO: Metal: create device objects
 #endif
 }
 } // namespace xray::render::RENDER_NAMESPACE
