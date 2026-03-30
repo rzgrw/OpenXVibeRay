@@ -7,6 +7,8 @@
 #include "Layers/xrRenderDX11/StateManager/dx11State.h"
 #elif defined(USE_OGL)
 #include "Layers/xrRenderGL/glState.h"
+#elif defined(USE_METAL)
+#include "Layers/xrRenderMetal/metalState.h"
 #endif
 
 namespace xray::render::RENDER_NAMESPACE
@@ -31,6 +33,8 @@ struct ECORE_API SVS : public xr_resource_named
     ID3DVertexShader* sh;
 #elif defined(USE_OGL)
     GLuint sh;
+#elif defined(USE_METAL)
+    uint64_t sh;
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -50,6 +54,8 @@ struct ECORE_API SPS : public xr_resource_named
     ID3DPixelShader* sh;
 #elif defined(USE_OGL)
     GLuint sh;
+#elif defined(USE_METAL)
+    uint64_t sh;
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -65,6 +71,8 @@ struct ECORE_API SGS : public xr_resource_named
     ID3DGeometryShader* sh;
 #elif defined(USE_OGL)
     GLuint sh;
+#elif defined(USE_METAL)
+    uint64_t sh;
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -79,6 +87,8 @@ struct ECORE_API SHS : public xr_resource_named
 	ID3D11HullShader* sh;
 #elif defined(USE_OGL)
     GLuint sh;
+#elif defined(USE_METAL)
+    uint64_t sh;
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -93,6 +103,8 @@ struct ECORE_API SDS : public xr_resource_named
     ID3D11DomainShader* sh;
 #elif defined(USE_OGL)
     GLuint sh;
+#elif defined(USE_METAL)
+    uint64_t sh;
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -107,6 +119,8 @@ struct ECORE_API SCS : public xr_resource_named
     ID3D11ComputeShader* sh;
 #elif defined(USE_OGL)
     GLuint sh;
+#elif defined(USE_METAL)
+    uint64_t sh;
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -128,7 +142,19 @@ struct ECORE_API SPP : public xr_resource_named
     ~SPP();
 };
 typedef resptr_core<SPP, resptr_base<SPP>> ref_pp;
-#endif // USE_OGL
+#elif defined(USE_METAL)
+struct ECORE_API SPP : public xr_resource_named
+{
+    // Metal render pipeline state placeholder
+    uint64_t pp{};
+    R_constant_table constants;
+
+    SPP() = default;
+    SPP(uint64_t _pp) : pp(_pp) {}
+    ~SPP();
+};
+typedef resptr_core<SPP, resptr_base<SPP>> ref_pp;
+#endif // USE_OGL / USE_METAL
 
 //////////////////////////////////////////////////////////////////////////
 struct ECORE_API SState : public xr_resource_flagged
@@ -149,6 +175,8 @@ struct ECORE_API SDeclaration : public xr_resource_flagged
     xr_vector<D3D_INPUT_ELEMENT_DESC> dx11_dcl_code;
 #elif defined(USE_OGL)
     GLuint dcl;
+#elif defined(USE_METAL)
+    uint64_t dcl; // Metal vertex descriptor placeholder
 #else
 #   error No graphics API selected or enabled!
 #endif

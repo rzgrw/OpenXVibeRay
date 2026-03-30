@@ -39,6 +39,10 @@ public:
     GLuint pRT{};
     GLuint pZRT{};
     GLenum target{};
+#elif defined(USE_METAL)
+    uint64_t pRT{};
+    uint64_t pZRT{};
+    u32 target{};
 #else
 #   error No graphics API selected or enabled!
 #endif

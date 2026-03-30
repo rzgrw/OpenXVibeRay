@@ -96,7 +96,7 @@ void R_constant_table::merge(R_constant_table* T)
             C->hs = src->hs;
             C->ds = src->ds;
             C->cs = src->cs;
-#elif defined(USE_OGL)
+#elif defined(USE_OGL) || defined(USE_METAL)
             C->pp = src->pp;
 #endif
             C->samp = src->samp;
@@ -111,10 +111,10 @@ void R_constant_table::merge(R_constant_table* T)
             R_constant_load& dL = C->get_load(src->destination);
             dL.index = sL.index;
             dL.cls = sL.cls;
-#ifdef USE_OGL
+#if defined(USE_OGL) || defined(USE_METAL)
             dL.location = sL.location;
             dL.program = sL.program;
-#endif // USE_OGL
+#endif // USE_OGL / USE_METAL
         }
     }
 

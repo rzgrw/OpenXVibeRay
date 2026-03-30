@@ -204,9 +204,11 @@ void CBlender_Compile::PassEnd()
 
 void CBlender_Compile::PassSET_Shaders(pcstr _vs, pcstr _ps, pcstr _gs /*= nullptr*/, pcstr _hs /*= nullptr*/, pcstr _ds /*= nullptr*/)
 {
-#if defined(USE_OGL)
+#if defined(USE_OGL) || defined(USE_METAL)
     dest.pp = RImplementation.Resources->_CreatePP(_vs, _ps, _gs, _hs, _ds);
+#if defined(USE_OGL)
     if (GLAD_GL_ARB_separate_shader_objects || !dest.pp->pp)
+#endif
 #endif
     {
         dest.ps = RImplementation.Resources->_CreatePS(_ps);
@@ -228,7 +230,7 @@ void CBlender_Compile::PassSET_Shaders(pcstr _vs, pcstr _ps, pcstr _gs /*= nullp
         dest.cs = RImplementation.Resources->_CreateCS("null");
 #endif
     }
-#if defined(USE_OGL)
+#if defined(USE_OGL) || defined(USE_METAL)
     RImplementation.Resources->_LinkPP(dest);
     ctable.merge(&dest.pp->constants);
 #endif

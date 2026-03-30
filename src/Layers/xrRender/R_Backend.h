@@ -100,6 +100,10 @@ private:
     GLuint pFB;
     GLuint pRT[4];
     GLuint pZB;
+#elif defined(USE_METAL)
+    uint64_t pFB;
+    uint64_t pRT[4];
+    uint64_t pZB;
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -128,6 +132,11 @@ private:
     GLuint vs;
     GLuint gs;
     GLuint pp;
+#elif defined(USE_METAL)
+    uint64_t ps;
+    uint64_t vs;
+    uint64_t gs;
+    uint64_t pp;
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -141,7 +150,7 @@ private:
     LPCSTR ds_name;
     LPCSTR cs_name;
 #   endif
-#   ifdef USE_OGL
+#   if defined(USE_OGL) || defined(USE_METAL)
     pcstr pp_name;
 #   endif
 #endif // DEBUG
@@ -281,6 +290,13 @@ public:
     IC GLuint get_FB();
     IC GLuint get_RT(u32 ID = 0);
     IC GLuint get_ZB();
+#elif defined(USE_METAL)
+    IC void set_FB(uint64_t FB = 0);
+    IC void set_RT(uint64_t RT, u32 ID = 0);
+    IC void set_ZB(uint64_t ZB);
+    IC uint64_t get_FB();
+    IC uint64_t get_RT(u32 ID = 0);
+    IC uint64_t get_ZB();
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -301,6 +317,14 @@ public:
 
     IC bool ClearRTRect(GLuint rt, const Fcolor& color, size_t numRects, const Irect* rects);
     IC bool ClearZBRect(GLuint zb, float depth, size_t numRects, const Irect* rects);
+#elif defined(USE_METAL)
+    IC void ClearRT(uint64_t rt, const Fcolor& color);
+
+    IC void ClearZB(uint64_t zb, float depth);
+    IC void ClearZB(uint64_t zb, float depth, u8 stencil);
+
+    IC bool ClearRTRect(uint64_t rt, const Fcolor& color, size_t numRects, const Irect* rects);
+    IC bool ClearZBRect(uint64_t zb, float depth, size_t numRects, const Irect* rects);
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -311,7 +335,7 @@ public:
         return ClearRTRect(rt->pRT, color, numRects, rects);
     }
 
-#if defined(USE_OGL)
+#if defined(USE_OGL) || defined(USE_METAL)
     ICF void ClearZB(ref_rt& zb, float depth) { ClearZB(zb->pRT, depth);}
     ICF void ClearZB(ref_rt& zb, float depth, u8 stencil) { ClearZB(zb->pRT, depth, stencil);}
     ICF bool ClearZBRect(ref_rt& zb, float depth, size_t numRects, const Irect* rects)
@@ -357,6 +381,8 @@ private:
     ICF void set_PS(ID3DPixelShader* _ps, LPCSTR _n = nullptr);
 #elif defined(USE_OGL)
     ICF void set_PS(GLuint _ps, LPCSTR _n = 0);
+#elif defined(USE_METAL)
+    ICF void set_PS(uint64_t _ps, LPCSTR _n = nullptr);
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -378,6 +404,11 @@ private:
 
     ICF void set_PP(GLuint _pp, pcstr _n = nullptr);
     ICF void set_PP(ref_pp& _pp) { set_PP(_pp->pp, _pp->cName.c_str()); }
+#   elif defined(USE_METAL)
+    ICF void set_GS(uint64_t _gs, LPCSTR _n = nullptr);
+
+    ICF void set_PP(uint64_t _pp, pcstr _n = nullptr);
+    ICF void set_PP(ref_pp& _pp) { set_PP(_pp->pp, _pp->cName.c_str()); }
 #   endif
 
     ICF void set_VS(ref_vs& _vs);
@@ -390,6 +421,8 @@ private:
     ICF void set_VS(ID3DVertexShader* _vs, LPCSTR _n = nullptr);
 #elif defined(USE_OGL)
     ICF void set_VS(GLuint _vs, LPCSTR _n = 0);
+#elif defined(USE_METAL)
+    ICF void set_VS(uint64_t _vs, LPCSTR _n = nullptr);
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -402,7 +435,7 @@ public:
 #endif
 
 public:
-#if defined(USE_OGL)
+#if defined(USE_OGL) || defined(USE_METAL)
     ICF bool is_TessEnabled() { return false; }
 #elif defined(USE_DX11)
     ICF bool is_TessEnabled();
@@ -455,7 +488,7 @@ public:
     {
         if (!C)
             return;
-#ifdef USE_OGL
+#if defined(USE_OGL)
         if (!GLAD_GL_ARB_separate_shader_objects)
             VERIFY(C->pp.program == pp);
 #endif
@@ -467,7 +500,7 @@ public:
     {
         if (!C)
             return;
-#ifdef USE_OGL
+#if defined(USE_OGL)
         if (!GLAD_GL_ARB_separate_shader_objects)
             VERIFY(C->pp.program == pp);
 #endif

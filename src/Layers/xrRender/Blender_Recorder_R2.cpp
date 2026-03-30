@@ -25,9 +25,11 @@ void CBlender_Compile::r_Pass(LPCSTR _vs, LPCSTR _ps, bool bFog, BOOL bZtest, BO
     PassSET_LightFog(FALSE, bFog);
 
     // Create shaders
-#if defined(USE_OGL)
+#if defined(USE_OGL) || defined(USE_METAL)
     dest.pp = RImplementation.Resources->_CreatePP(_vs, _ps, "null", "null", "null");
+#if defined(USE_OGL)
     if (GLAD_GL_ARB_separate_shader_objects || !dest.pp->pp)
+#endif
 #endif
     {
         dest.ps = RImplementation.Resources->_CreatePS(_ps);
@@ -46,7 +48,7 @@ void CBlender_Compile::r_Pass(LPCSTR _vs, LPCSTR _ps, bool bFog, BOOL bZtest, BO
         dest.cs = RImplementation.Resources->_CreateCS("null");
 #endif
     }
-#if defined(USE_OGL)
+#if defined(USE_OGL) || defined(USE_METAL)
     RImplementation.Resources->_LinkPP(dest);
     ctable.merge(&dest.pp->constants);
 #endif
@@ -130,7 +132,7 @@ void CBlender_Compile::i_Filter(u32 s, u32 _min, u32 _mip, u32 _mag)
     i_Filter_Min(s, _min);
     i_Filter_Mip(s, _mip);
     i_Filter_Mag(s, _mag);
-#if defined(USE_OGL)
+#if defined(USE_OGL) || defined(USE_METAL)
     if (_min == D3DTEXF_ANISOTROPIC && _mag == D3DTEXF_ANISOTROPIC)
         i_Filter_Aniso(s, ps_r__tf_Anisotropic);
 #endif
@@ -144,7 +146,7 @@ u32 CBlender_Compile::r_Sampler(
     {
 #if defined(USE_DX11)
         r_dx11Texture(_name, texture, true);
-#elif defined(USE_OGL)
+#elif defined(USE_OGL) || defined(USE_METAL)
         i_Texture(dwStage, texture);
 #else
 #   error No graphics API selected or enabled!
@@ -171,7 +173,7 @@ u32 CBlender_Compile::r_Sampler(
             fmag = D3DTEXF_ANISOTROPIC;
         }
 
-#if defined(USE_OGL)
+#if defined(USE_OGL) || defined(USE_METAL)
         if (0 == xr_strcmp(_name, "s_position"))
         {
             address = D3DTADDRESS_CLAMP;

@@ -60,7 +60,7 @@ bool SPass::equal(const SPass& other) const
         return false;
     if (cs != other.cs)
         return false;
-#elif defined(USE_OGL)
+#elif defined(USE_OGL) || defined(USE_METAL)
     if (pp != other.pp)
         return false;
 #endif
