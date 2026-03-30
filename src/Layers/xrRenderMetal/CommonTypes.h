@@ -7,6 +7,13 @@
 #include "Common/d3d9compat.hpp"
 #endif
 
+// metal-cpp C++ wrappers for Metal types.
+// Do NOT define METAL_IMPLEMENTATION here — that must be done exactly once
+// in a single .cpp translation unit (e.g. metalHW.cpp).
+#if defined(USE_METAL)
+#include <Metal/Metal.hpp>
+#endif
+
 namespace xray::render::RENDER_NAMESPACE
 {
 class metalState;
@@ -16,23 +23,38 @@ typedef enum D3D_CLEAR_FLAG {
     D3D_CLEAR_STENCIL = 0x2L
 } D3D_CLEAR_FLAG;
 
+// D3D_COMPARISON_FUNC values match MTL::CompareFunction exactly so that
+// the shared render code can cast them directly to Metal compare functions.
+// MTL::CompareFunction: Never=0, Less=1, Equal=2, LessEqual=3,
+//                       Greater=4, NotEqual=5, GreaterEqual=6, Always=7.
 typedef enum D3D_COMPARISON_FUNC {
-    D3D_COMPARISON_NEVER         = 1,
-    D3D_COMPARISON_LESS          = 2,
-    D3D_COMPARISON_EQUAL         = 3,
-    D3D_COMPARISON_LESS_EQUAL    = 4,
-    D3D_COMPARISON_GREATER       = 5,
-    D3D_COMPARISON_NOT_EQUAL     = 6,
-    D3D_COMPARISON_GREATER_EQUAL = 7,
-    D3D_COMPARISON_ALWAYS        = 8
+#if defined(USE_METAL)
+    D3D_COMPARISON_NEVER         = MTL::CompareFunctionNever,
+    D3D_COMPARISON_LESS          = MTL::CompareFunctionLess,
+    D3D_COMPARISON_EQUAL         = MTL::CompareFunctionEqual,
+    D3D_COMPARISON_LESS_EQUAL    = MTL::CompareFunctionLessEqual,
+    D3D_COMPARISON_GREATER       = MTL::CompareFunctionGreater,
+    D3D_COMPARISON_NOT_EQUAL     = MTL::CompareFunctionNotEqual,
+    D3D_COMPARISON_GREATER_EQUAL = MTL::CompareFunctionGreaterEqual,
+    D3D_COMPARISON_ALWAYS        = MTL::CompareFunctionAlways,
+#else
+    // Fallback numeric values matching MTL::CompareFunction for non-Metal builds.
+    D3D_COMPARISON_NEVER         = 0,
+    D3D_COMPARISON_LESS          = 1,
+    D3D_COMPARISON_EQUAL         = 2,
+    D3D_COMPARISON_LESS_EQUAL    = 3,
+    D3D_COMPARISON_GREATER       = 4,
+    D3D_COMPARISON_NOT_EQUAL     = 5,
+    D3D_COMPARISON_GREATER_EQUAL = 6,
+    D3D_COMPARISON_ALWAYS        = 7,
+#endif
 } D3D_COMPARISON_FUNC;
 
-// Viewport struct — integer/float coordinates matching the D3D11 layout.
-// Will be bridged to MTLViewport when Metal code is implemented.
+// Viewport struct — float coordinates matching the MTLViewport layout.
 struct XR_METAL_VIEWPORT
 {
-    int   TopLeftX, TopLeftY;
-    int   Width, Height;
+    float TopLeftX, TopLeftY;
+    float Width, Height;
     float MinDepth, MaxDepth;
 };
 
@@ -43,8 +65,8 @@ struct D3D_VIEWPORT : XR_METAL_VIEWPORT
     template <typename TopLeftCoords, typename Dimensions>
     D3D_VIEWPORT(TopLeftCoords x, TopLeftCoords y, Dimensions w, Dimensions h, float minZ, float maxZ)
         : XR_METAL_VIEWPORT{
-            static_cast<int>(x), static_cast<int>(y),
-            static_cast<int>(w), static_cast<int>(h),
+            static_cast<float>(x), static_cast<float>(y),
+            static_cast<float>(w), static_cast<float>(h),
             minZ, maxZ,
           }
     {}
@@ -91,10 +113,16 @@ using ID3DState = metalState;
 
 using unused_t = int[0];
 
-// Buffer handles — placeholder uint64_t until Metal buffer types are defined.
-using IndexBufferHandle    = uint64_t;
-using VertexBufferHandle   = uint64_t;
-using ConstantBufferHandle = uint64_t;
+// Buffer handles — MTL::Buffer* for Metal, void* fallback for non-Metal builds.
+#if defined(USE_METAL)
+using IndexBufferHandle    = MTL::Buffer*;
+using VertexBufferHandle   = MTL::Buffer*;
+using ConstantBufferHandle = MTL::Buffer*;
+#else
+using IndexBufferHandle    = void*;
+using VertexBufferHandle   = void*;
+using ConstantBufferHandle = void*;
+#endif
 using HostBufferHandle     = void*;
 
 using VertexElement    = D3DVERTEXELEMENT9;
