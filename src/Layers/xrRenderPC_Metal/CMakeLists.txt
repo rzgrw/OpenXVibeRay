@@ -433,6 +433,16 @@ target_precompile_headers(xrRender_Metal
     $<$<COMPILE_LANGUAGE:CXX>:stdafx.h>
 )
 
+# metalHW.cpp defines NS_PRIVATE_IMPLEMENTATION / MTL_PRIVATE_IMPLEMENTATION /
+# CA_PRIVATE_IMPLEMENTATION before any metal-cpp headers are included.  Those
+# macros must appear before the first inclusion of Metal/Metal.hpp, which the
+# precompiled header would inject transparently.  Skip PCH for this file so
+# the defines take effect in the correct order.
+set_source_files_properties(
+    ../xrRenderMetal/metalHW.cpp
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON
+)
+
 if (BUILD_SHARED_LIBS)
     install(TARGETS xrRender_Metal LIBRARY
         DESTINATION "${CMAKE_INSTALL_LIBDIR}"

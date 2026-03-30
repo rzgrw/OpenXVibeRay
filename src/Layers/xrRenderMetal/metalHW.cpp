@@ -1,11 +1,18 @@
-// metalHW.cpp — stub implementation of the Metal hardware device.
-// Real CAMetalLayer / MTL::Device creation will be implemented in a later task.
+// metalHW.cpp — implementation of the Metal hardware device.
+// Uses metal-cpp C++ wrappers for the Metal API.
+// The PRIVATE_IMPLEMENTATION macros must be defined in exactly one TU.
+
+#define NS_PRIVATE_IMPLEMENTATION
+#define MTL_PRIVATE_IMPLEMENTATION
+#define CA_PRIVATE_IMPLEMENTATION
 
 #include "stdafx.h"
 #pragma hdrstop
 
 #include "metalHW.h"
 #include "xrEngine/XR_IOConsole.h"
+
+#include <SDL_metal.h>
 
 namespace xray::render::RENDER_NAMESPACE
 {
@@ -18,8 +25,6 @@ CHW::CHW()
 
     Device.seqAppActivate.Add(this);
     Device.seqAppDeactivate.Add(this);
-
-    AdapterName = "Metal (stub)";
 }
 
 CHW::~CHW()
@@ -31,47 +36,148 @@ CHW::~CHW()
     Device.seqAppDeactivate.Remove(this);
 }
 
+void CHW::OnAppActivate()
+{
+    if (m_window)
+        SDL_RestoreWindow(m_window);
+}
+
+void CHW::OnAppDeactivate()
+{
+    if (m_window)
+    {
+        if (psDeviceMode.WindowStyle == rsFullscreen || psDeviceMode.WindowStyle == rsFullscreenBorderless)
+            SDL_MinimizeWindow(m_window);
+    }
+}
+
+//////////////////////////////////////////////////////////////////////
+// Device creation / destruction
+//////////////////////////////////////////////////////////////////////
 void CHW::CreateDevice(SDL_Window* sdlWnd)
 {
+    ZoneScoped;
+
     m_window = sdlWnd;
-    // TODO: Create CAMetalLayer, MTL::Device, MTL::CommandQueue
-    Msg("* Metal device creation not yet implemented (stub)");
+    R_ASSERT(m_window);
+
+    // Create the Metal device
+    pDevice = MTL::CreateSystemDefaultDevice();
+    if (!pDevice)
+    {
+        Msg("! Metal: MTL::CreateSystemDefaultDevice() returned nullptr");
+        return;
+    }
+
+    AdapterName = pDevice->name()->utf8String();
+    Msg("* Metal device: [%s]", AdapterName);
+
+    // Create the command queue
+    pCommandQueue = pDevice->newCommandQueue();
+    if (!pCommandQueue)
+    {
+        Msg("! Metal: failed to create command queue");
+        return;
+    }
+
+    // Create the CAMetalLayer-backed view via SDL
+    m_metalView = SDL_Metal_CreateView(m_window);
+    if (!m_metalView)
+    {
+        Msg("! Metal: SDL_Metal_CreateView() failed: %s", SDL_GetError());
+        return;
+    }
+
+    // SDL_Metal_GetLayer returns the CAMetalLayer* (as void*) from the SDL_MetalView
+    pMetalLayer = static_cast<CA::MetalLayer*>(SDL_Metal_GetLayer(m_metalView));
+    if (!pMetalLayer)
+    {
+        Msg("! Metal: SDL_Metal_GetLayer() returned nullptr");
+        return;
+    }
+
+    // Configure the layer
+    pMetalLayer->setDevice(pDevice);
+    pMetalLayer->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
+    pMetalLayer->setFramebufferOnly(true);
+
+    Caps.fTarget = D3DFMT_A8R8G8B8;
+    Caps.fDepth  = D3DFMT_D24S8;
+
+    BackBufferCount = 1;
 }
 
 void CHW::DestroyDevice()
 {
-    // TODO: Release Metal objects
-    m_commandQueue = nullptr;
-    m_device       = nullptr;
-    m_metalLayer   = nullptr;
-    m_window       = nullptr;
+    // Discard any in-flight frame
+    if (pCurrentDrawable)
+    {
+        pCurrentDrawable->release();
+        pCurrentDrawable = nullptr;
+    }
+    if (pCurrentCommandBuffer)
+    {
+        pCurrentCommandBuffer->release();
+        pCurrentCommandBuffer = nullptr;
+    }
+
+    // Release Metal objects (newXxx / CreateXxx objects are owned by us)
+    if (pCommandQueue)
+    {
+        pCommandQueue->release();
+        pCommandQueue = nullptr;
+    }
+    if (pDevice)
+    {
+        pDevice->release();
+        pDevice = nullptr;
+    }
+
+    // Destroy the SDL Metal view (must be done before destroying the window)
+    if (m_metalView)
+    {
+        SDL_Metal_DestroyView(static_cast<SDL_MetalView>(m_metalView));
+        m_metalView   = nullptr;
+        pMetalLayer   = nullptr;  // owned by the view; don't release separately
+    }
+
+    m_window = nullptr;
 }
 
+//////////////////////////////////////////////////////////////////////
+// Reset / present
+//////////////////////////////////////////////////////////////////////
 void CHW::Reset()
 {
-    // TODO: Recreate swapchain / drawable
+    ZoneScoped;
+    // CAMetalLayer automatically tracks the window size; nothing to recreate.
 }
 
-void CHW::SetPrimaryAttributes(u32& /*windowFlags*/)
+void CHW::SetPrimaryAttributes(u32& windowFlags)
 {
-    // SDL_WINDOW_METAL is set externally when needed; nothing else required here
+    windowFlags |= SDL_WINDOW_METAL;
 }
 
 IRender::RenderContext CHW::GetCurrentContext() const
 {
-    return IRender::RenderContext::NoContext;
+    // Metal has no thread-bound context; always report primary.
+    return IRender::PrimaryContext;
 }
 
 int CHW::MakeContextCurrent(IRender::RenderContext /*context*/) const
 {
+    // No-op — Metal command buffers are not bound to a thread context.
     return 0;
 }
 
-// static
 std::pair<u32, u32> CHW::GetSurfaceSize()
 {
-    // TODO: Query the actual drawable size from CAMetalLayer
-    return { 1280, 720 };
+    if (HW.pMetalLayer)
+    {
+        const CGSize sz = HW.pMetalLayer->drawableSize();
+        return { static_cast<u32>(sz.width), static_cast<u32>(sz.height) };
+    }
+    return { psDeviceMode.Width, psDeviceMode.Height };
 }
 
 DeviceState CHW::GetDeviceState() const
@@ -79,45 +185,68 @@ DeviceState CHW::GetDeviceState() const
     return DeviceState::Normal;
 }
 
+//////////////////////////////////////////////////////////////////////
+// Per-frame begin / end / present
+//////////////////////////////////////////////////////////////////////
 void CHW::BeginScene()
 {
-    // TODO: Acquire next drawable, create command buffer
+    if (!pCommandQueue)
+        return;
+
+    pCurrentCommandBuffer = pCommandQueue->commandBuffer();
+    if (pMetalLayer)
+        pCurrentDrawable = pMetalLayer->nextDrawable();
 }
 
 void CHW::EndScene()
 {
-    // TODO: Commit command buffer
+    if (!pCurrentCommandBuffer)
+        return;
+
+    pCurrentCommandBuffer->commit();
+    pCurrentCommandBuffer->release();
+    pCurrentCommandBuffer = nullptr;
 }
 
 void CHW::Present()
 {
-    // TODO: Present drawable
+    if (pCurrentDrawable)
+    {
+        pCurrentDrawable->present();
+        pCurrentDrawable->release();
+        pCurrentDrawable = nullptr;
+    }
+
+    CurrentBackBuffer = (CurrentBackBuffer + 1) % BackBufferCount;
 }
 
-void CHW::OnAppActivate()
+//////////////////////////////////////////////////////////////////////
+// Debug markers
+//////////////////////////////////////////////////////////////////////
+void CHW::BeginPixEvent(pcstr name) const
 {
+    if (pCurrentCommandBuffer)
+        pCurrentCommandBuffer->pushDebugGroup(
+            NS::String::string(name, NS::UTF8StringEncoding));
 }
 
-void CHW::OnAppDeactivate()
+void CHW::EndPixEvent() const
 {
+    if (pCurrentCommandBuffer)
+        pCurrentCommandBuffer->popDebugGroup();
 }
 
+//////////////////////////////////////////////////////////////////////
+// Private helpers
+//////////////////////////////////////////////////////////////////////
 void CHW::UpdateViews()
 {
+    // Nothing to do for Metal — layer manages the drawable surface.
 }
 
 bool CHW::ThisInstanceIsGlobal() const
 {
     return this == &HW;
-}
-
-void CHW::BeginPixEvent(pcstr /*name*/) const
-{
-    // TODO: MTL::CaptureManager / signpost
-}
-
-void CHW::EndPixEvent() const
-{
 }
 
 } // namespace xray::render::RENDER_NAMESPACE

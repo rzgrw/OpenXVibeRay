@@ -3,12 +3,15 @@
 #include "Layers/xrRender/HWCaps.h"
 #include "xrCore/ModuleLookup.hpp"
 
+#if defined(USE_METAL)
+#include <Metal/Metal.hpp>
+#include <QuartzCore/QuartzCore.hpp>
+#endif
+
 namespace xray::render::RENDER_NAMESPACE
 {
 // CHW — Metal hardware abstraction layer.
 // Mirrors the interface of glHW / dx11HW for drop-in use by shared render code.
-// All members that reference Metal types are void* / uint64_t placeholders until
-// the Metal SDK wrappers (Tasks 3-5) are in place.
 class CHW
     : public pureAppActivate,
       public pureAppDeactivate
@@ -55,15 +58,23 @@ public:
     u32 BackBufferCount{};
     u32 CurrentBackBuffer{};
 
-    // Framebuffer handle (placeholder — will become MTLTexture* once Metal is wired up)
-    uint64_t pFB{};
-
     SDL_Window* m_window{};
 
-    // Metal layer / device pointers — typed as void* until metal-cpp headers are used
-    void* m_metalLayer{};    // CAMetalLayer*
-    void* m_device{};        // MTL::Device*
-    void* m_commandQueue{};  // MTL::CommandQueue*
+    // Metal objects
+#if defined(USE_METAL)
+    MTL::Device*           pDevice        = nullptr;
+    MTL::CommandQueue*     pCommandQueue  = nullptr;
+    CA::MetalLayer*        pMetalLayer    = nullptr;  // backed by SDL_Metal_CreateView
+    MTL::CommandBuffer*    pCurrentCommandBuffer = nullptr;
+    CA::MetalDrawable*     pCurrentDrawable      = nullptr;
+#else
+    void* pDevice        = nullptr;
+    void* pCommandQueue  = nullptr;
+    void* pMetalLayer    = nullptr;
+#endif
+
+    // SDL_MetalView handle (NSView* on macOS) — retained so we can destroy it
+    void* m_metalView{};  // SDL_MetalView
 
     pcstr AdapterName;
 };
