@@ -248,9 +248,23 @@ void CRenderDevice::OnErrorDialog(bool beforeDialog)
     const bool needUpdateInput = pInput && pInput->IsExclusiveMode();
 
     if (restore)
+    {
+#ifdef XR_PLATFORM_APPLE
+        SDL_RestoreWindow(m_sdlWnd);
+#endif
         UpdateWindowProps();
+    }
     else
+    {
         SDL_SetWindowFullscreen(m_sdlWnd, SDL_FALSE);
+#ifdef XR_PLATFORM_APPLE
+        // Leaving fullscreen is asynchronous on macOS: the dead window keeps
+        // covering the screen and the error dialog opens behind it, unreachable.
+        // Get the window fully out of the way so the dialog can be seen.
+        SDL_SetWindowAlwaysOnTop(m_sdlWnd, SDL_FALSE);
+        SDL_MinimizeWindow(m_sdlWnd);
+#endif
+    }
 
     if (needUpdateInput)
         pInput->GrabInput(restore);
