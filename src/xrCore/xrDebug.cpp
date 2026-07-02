@@ -651,7 +651,14 @@ void xrDebug::OnThreadSpawn()
     std::signal(SIGSEGV, +[](int signal) { handler_base("segmentation fault"); });
 #   endif
     std::signal(SIGABRT, +[](int signal) { handler_base("application is aborting"); });
+#if defined(XR_PLATFORM_WINDOWS)
     std::signal(SIGTERM, +[](int signal) { handler_base("termination with exit code 3"); });
+#else
+    // SIGTERM must stay deliverable. The interactive handler deadlocks on
+    // failLock when a fatal-error dialog is already up, which makes a crashed
+    // process unkillable by anything short of SIGKILL.
+    std::signal(SIGTERM, SIG_DFL);
+#endif
 
 #   if defined(XR_PLATFORM_WINDOWS)
     std::signal(SIGABRT_COMPAT, +[](int signal) { handler_base("application is aborting"); });
