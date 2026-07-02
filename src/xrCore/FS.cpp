@@ -75,7 +75,9 @@ void VerifyPath(pcstr path)
     string1024 tmp;
     for (int i = 0; path[i]; i++)
     {
-        if (path[i] != _DELIMITER || i == 0)
+        // Paths may arrive with either separator (scripts build them with '/'
+        // on POSIX, fsgame.ltx entries use '\'), so split on both.
+        if ((path[i] != _DELIMITER && path[i] != '/') || i == 0)
             continue;
         CopyMemory(tmp, path, i);
         tmp[i] = 0;

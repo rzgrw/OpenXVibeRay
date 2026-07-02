@@ -356,7 +356,13 @@ inline int vsnprintf_s(char* buffer, size_t size, size_t, const char* format, va
 #define _access access
 #define _open open
 #define _close close
-#define _sopen open
+// Windows _sopen(fn, oflag, shflag): the share flag has no POSIX equivalent,
+// but with O_CREAT open() reads the third argument as the permission mode —
+// passing the share flag through created files with 0000 permissions.
+inline int _sopen(const char* fn, int oflag, int /*shflag*/)
+{
+    return open(fn, oflag, 0644);
+}
 #define _utime utime
 #define _utimbuf utimbuf
 #define _sopen_s(handle, filename, ...) open(filename, O_RDONLY)
