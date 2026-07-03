@@ -5,9 +5,86 @@
 #include "stdafx.h"
 
 #include <gli/gli.hpp>
+#include <gli/core/s3tc.hpp>
 
 namespace xray::render::RENDER_NAMESPACE
 {
+enum class s3tc_kind
+{
+    none,
+    dxt1,
+    dxt3,
+    dxt5
+};
+
+static s3tc_kind s3tc_format_kind(gli::format fmt)
+{
+    switch (fmt)
+    {
+    case gli::FORMAT_RGB_DXT1_UNORM_BLOCK8:
+    case gli::FORMAT_RGB_DXT1_SRGB_BLOCK8:
+    case gli::FORMAT_RGBA_DXT1_UNORM_BLOCK8:
+    case gli::FORMAT_RGBA_DXT1_SRGB_BLOCK8:
+        return s3tc_kind::dxt1;
+    case gli::FORMAT_RGBA_DXT3_UNORM_BLOCK16:
+    case gli::FORMAT_RGBA_DXT3_SRGB_BLOCK16:
+        return s3tc_kind::dxt3;
+    case gli::FORMAT_RGBA_DXT5_UNORM_BLOCK16:
+    case gli::FORMAT_RGBA_DXT5_SRGB_BLOCK16:
+        return s3tc_kind::dxt5;
+    default:
+        return s3tc_kind::none;
+    }
+}
+
+// OpenGL forbids S3TC compression for 3D targets (EXT_texture_compression_s3tc
+// only covers 2D/array/cube), so compressed volume textures like
+// water_sbumpvolume.dds must be decompressed to RGBA8 and uploaded raw.
+static void decompress_s3tc_rgba8(gli::texture const& texture, size_t layer, size_t face, size_t level,
+    s3tc_kind kind, xr_vector<u8>& out)
+{
+    glm::tvec3<GLsizei> const ext(texture.extent(level));
+    size_t const width = ext.x, height = ext.y, depth = ext.z;
+    size_t const blocks_x = (width + 3) / 4, blocks_y = (height + 3) / 4;
+    size_t const block_size = kind == s3tc_kind::dxt1 ? 8 : 16;
+
+    out.resize(width * height * depth * 4);
+    auto src = static_cast<u8 const*>(texture.data(layer, face, level));
+
+    for (size_t z = 0; z < depth; ++z)
+    {
+        u8* const slice = out.data() + z * width * height * 4;
+        for (size_t by = 0; by < blocks_y; ++by)
+            for (size_t bx = 0; bx < blocks_x; ++bx, src += block_size)
+            {
+                gli::detail::texel_block4x4 block;
+                switch (kind)
+                {
+                case s3tc_kind::dxt1:
+                    block = gli::detail::decompress_dxt1_block(*reinterpret_cast<gli::detail::dxt1_block const*>(src));
+                    break;
+                case s3tc_kind::dxt3:
+                    block = gli::detail::decompress_dxt3_block(*reinterpret_cast<gli::detail::dxt3_block const*>(src));
+                    break;
+                default:
+                    block = gli::detail::decompress_dxt5_block(*reinterpret_cast<gli::detail::dxt5_block const*>(src));
+                    break;
+                }
+
+                for (size_t row = 0; row < 4 && by * 4 + row < height; ++row)
+                    for (size_t col = 0; col < 4 && bx * 4 + col < width; ++col)
+                    {
+                        u8* const dst = slice + ((by * 4 + row) * width + bx * 4 + col) * 4;
+                        glm::vec4 const& texel = block.Texel[row][col];
+                        dst[0] = u8(glm::clamp(texel.r, 0.0f, 1.0f) * 255.0f + 0.5f);
+                        dst[1] = u8(glm::clamp(texel.g, 0.0f, 1.0f) * 255.0f + 0.5f);
+                        dst[2] = u8(glm::clamp(texel.b, 0.0f, 1.0f) * 255.0f + 0.5f);
+                        dst[3] = u8(glm::clamp(texel.a, 0.0f, 1.0f) * 255.0f + 0.5f);
+                    }
+            }
+    }
+}
+
 void fix_texture_name(pstr fn)
 {
     pstr _ext = strext(fn);
@@ -118,6 +195,11 @@ GLuint CRender::texture_load(LPCSTR fRName, u32& ret_msize, GLenum& ret_desc)
     gli::gl::format const format = GL.translate(texture.format(), texture.swizzles());
     GLenum target = GL.translate(texture.target());
 
+    // Drain stale errors so failures below are attributed to THIS load,
+    // not to whatever GL call raised them earlier in the frame.
+    for (GLenum stale = glGetError(); stale != GL_NO_ERROR; stale = glGetError())
+        Msg("! OpenGL: stale error 0x%x pending before loading '%s'", stale, fn);
+
     glGenTextures(1, &pTexture);
     glBindTexture(target, pTexture);
 
@@ -128,6 +210,11 @@ GLuint CRender::texture_load(LPCSTR fRName, u32& ret_msize, GLenum& ret_desc)
         glTexParameteriv(target, GL_TEXTURE_SWIZZLE_RGBA, &format.Swizzles[gli::SWIZZLE_RED]);
 
     glm::tvec3<GLsizei> const tex_extent(texture.extent());
+
+    // GL rejects S3TC-compressed volume textures — those get decompressed on the CPU
+    s3tc_kind const decode_3d = texture.target() == gli::TARGET_3D && gli::is_compressed(texture.format())
+        ? s3tc_format_kind(texture.format())
+        : s3tc_kind::none;
 
     GLenum err;
     switch (texture.target())
@@ -140,18 +227,23 @@ GLuint CRender::texture_load(LPCSTR fRName, u32& ret_msize, GLenum& ret_desc)
         if (err != GL_NO_ERROR)
         {
             VERIFY(err == GL_NO_ERROR);
-            Msg("! OpenGL: 0x%x: Invalid 2D texture: '%s'", err, fn);
+            Msg("! OpenGL: 0x%x: Invalid 2D texture: '%s' (internal=0x%x, %dx%d, levels=%zu, compressed=%d)",
+                err, fn, format.Internal, tex_extent.x, tex_extent.y, texture.levels(),
+                gli::is_compressed(texture.format()) ? 1 : 0);
         }
         break;
     case gli::TARGET_3D:
     case gli::TARGET_CUBE_ARRAY:
-        glTexStorage3D(target, static_cast<GLint>(texture.levels()), format.Internal,
+        glTexStorage3D(target, static_cast<GLint>(texture.levels()),
+                       decode_3d != s3tc_kind::none ? GL_RGBA8 : format.Internal,
                        tex_extent.x, tex_extent.y, tex_extent.z);
         err = glGetError();
         if (err != GL_NO_ERROR)
         {
             VERIFY(err == GL_NO_ERROR);
-            Msg("! OpenGL: 0x%x: Invalid 3D texture: '%s'", err, fn);
+            Msg("! OpenGL: 0x%x: Invalid 3D texture: '%s' (internal=0x%x, %dx%dx%d, levels=%zu, compressed=%d)",
+                err, fn, format.Internal, tex_extent.x, tex_extent.y, tex_extent.z, texture.levels(),
+                gli::is_compressed(texture.format()) ? 1 : 0);
         }
         break;
     default:
@@ -207,7 +299,21 @@ GLuint CRender::texture_load(LPCSTR fRName, u32& ret_msize, GLenum& ret_desc)
                 case gli::TARGET_3D:
                 case gli::TARGET_CUBE_ARRAY:
                 {
-                    if (gli::is_compressed(texture.format()))
+                    if (decode_3d != s3tc_kind::none)
+                    {
+                        xr_vector<u8> rgba8;
+                        decompress_s3tc_rgba8(texture, layer, face, level, decode_3d, rgba8);
+                        glTexSubImage3D(target, static_cast<GLint>(level),
+                                    0, 0, 0, tex_level_extent.x, tex_level_extent.y, tex_level_extent.z,
+                                    GL_RGBA, GL_UNSIGNED_BYTE, rgba8.data());
+                        err = glGetError();
+                        if (err != GL_NO_ERROR)
+                        {
+                            VERIFY(err == GL_NO_ERROR);
+                            Msg("! OpenGL: 0x%x: Invalid decompressed 3D subtexture: '%s'", err, fn);
+                        }
+                    }
+                    else if (gli::is_compressed(texture.format()))
                     {
                         glCompressedTexSubImage3D(target, static_cast<GLint>(level),
                                     0, 0, 0, tex_level_extent.x, tex_level_extent.y, tex_level_extent.z,
