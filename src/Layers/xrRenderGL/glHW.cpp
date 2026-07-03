@@ -253,12 +253,43 @@ void CHW::Present()
 #if 0 // kept for historical reasons
     RImplementation.Target->phase_flip();
 #else
+    // The window drawable is not guaranteed to match the render resolution:
+    // macOS clamps windows larger than the desktop, borderless windows track
+    // the desktop size, and HiDPI drawables differ from window points.
+    // Blit with aspect preservation into whatever the drawable really is.
+    int drawableW = int(Device.dwWidth), drawableH = int(Device.dwHeight);
+    SDL_GL_GetDrawableSize(m_window, &drawableW, &drawableH);
+
+    int dstX = 0, dstY = 0, dstW = drawableW, dstH = drawableH;
+    if (drawableW != int(Device.dwWidth) || drawableH != int(Device.dwHeight))
+    {
+        const float srcAspect = float(Device.dwWidth) / float(Device.dwHeight);
+        const float dstAspect = float(drawableW) / float(drawableH);
+        if (dstAspect > srcAspect) // window wider than render — pillarbox
+        {
+            dstW = int(float(drawableH) * srcAspect);
+            dstX = (drawableW - dstW) / 2;
+        }
+        else if (dstAspect < srcAspect) // window taller than render — letterbox
+        {
+            dstH = int(float(drawableW) / srcAspect);
+            dstY = (drawableH - dstH) / 2;
+        }
+    }
+
+    glDisable(GL_SCISSOR_TEST); // scissor clips both the clear and the blit
     glBindFramebuffer(GL_READ_FRAMEBUFFER, pFB);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    if (dstX != 0 || dstY != 0)
+    {
+        glClearColor(0.f, 0.f, 0.f, 1.f);
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
     glBlitFramebuffer(
         0, 0, Device.dwWidth, Device.dwHeight,
-        0, 0, Device.dwWidth, Device.dwHeight,
-        GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        dstX, dstY, dstX + dstW, dstY + dstH,
+        GL_COLOR_BUFFER_BIT,
+        (dstW == int(Device.dwWidth) && dstH == int(Device.dwHeight)) ? GL_NEAREST : GL_LINEAR);
 #endif
 
     SDL_GL_SwapWindow(m_window);
