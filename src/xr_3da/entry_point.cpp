@@ -33,7 +33,7 @@ std::array s_render_modules =
 #ifdef XR_PLATFORM_WINDOWS
     xray::render::render_r4::GetRendererModule(),
 #endif
-#ifdef XR_PLATFORM_APPLE
+#if defined(XR_PLATFORM_APPLE) && defined(XR_METAL_RENDERER)
     xray::render::render_metal::GetRendererModule(),
 #endif
     xray::render::render_gl::GetRendererModule(),

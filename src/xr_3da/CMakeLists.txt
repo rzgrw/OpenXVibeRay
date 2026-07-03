@@ -33,6 +33,11 @@ target_link_libraries(xr_3da
     xrGame
 )
 
+if (XRAY_METAL)
+    target_link_libraries(xr_3da PRIVATE xrRender_Metal)
+    target_compile_definitions(xr_3da PRIVATE XR_METAL_RENDERER)
+endif()
+
 set_target_properties(xr_3da PROPERTIES
     PREFIX ""
 )
