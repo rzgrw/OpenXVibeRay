@@ -4,6 +4,8 @@
 #include "xrCommon/xr_vector.h"
 #include "Threading/Lock.hpp"
 
+#include <atomic>
+
 #include <string>
 #if defined(XR_PLATFORM_LINUX) || defined(XR_PLATFORM_BSD) || defined(XR_PLATFORM_APPLE)
 #include <cstdio>
@@ -78,7 +80,7 @@ private:
     static UnhandledExceptionFilter PrevFilter;
     static OutOfMemoryCallbackFunc OutOfMemoryCallback;
     static string_path BugReportFile;
-    static bool ErrorAfterDialog;
+    static std::atomic_bool ErrorAfterDialog; // read from signal handlers — must be atomic
     static bool ShowErrorMessage;
 
 public:
