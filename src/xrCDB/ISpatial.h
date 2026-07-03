@@ -221,7 +221,18 @@ public:
         }
     };
 
+public:
+    // Registered objects can outlive their DB: renderer modules hold lights in
+    // static globals whose destructors run at exit(), long after
+    // g_pGamePersistent (which owns the spatial spaces) is gone. Late
+    // unregistration must not dereference the dead DB, so destruction paths
+    // check liveness here first. Create/destroy happens on the main thread.
+    static bool alive(const ISpatial_DB* db);
+
 private:
+    static ISpatial_DB* s_live_list;
+    ISpatial_DB* m_live_next{};
+
     Lock cs;
 
     poolSS<ISpatial_NODE, 128> allocator;

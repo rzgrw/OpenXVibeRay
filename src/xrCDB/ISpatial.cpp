@@ -84,8 +84,11 @@ void SpatialBase::spatial_unregister()
 {
     if (spatial.node_ptr)
     {
-        // remove
-        spatial.space->remove(this);
+        // The DB is gone if a leaked object unregisters from a static
+        // destructor at exit(); touching it then locks a destroyed mutex
+        // and wedges the process forever. Detach without it.
+        if (ISpatial_DB::alive(spatial.space))
+            spatial.space->remove(this);
         spatial.node_ptr = NULL;
         spatial.sector_id = IRender_Sector::INVALID_SECTOR_ID;
     }
@@ -151,6 +154,16 @@ void ISpatial_NODE::_remove(ISpatial* S)
 
 //////////////////////////////////////////////////////////////////////////
 
+ISpatial_DB* ISpatial_DB::s_live_list = nullptr;
+
+bool ISpatial_DB::alive(const ISpatial_DB* db)
+{
+    for (const ISpatial_DB* i = s_live_list; i; i = i->m_live_next)
+        if (i == db)
+            return true;
+    return false;
+}
+
 ISpatial_DB::ISpatial_DB(pcstr name)
 #ifdef CONFIG_PROFILE_LOCKS
     : cs(MUTEX_PROFILE_ID(ISpatial_DB)),
@@ -158,10 +171,27 @@ ISpatial_DB::ISpatial_DB(pcstr name)
 
 {
     xr_strcpy(Name, name);
+
+    m_live_next = s_live_list;
+    s_live_list = this;
 }
 
 ISpatial_DB::~ISpatial_DB()
 {
+    if (s_live_list == this)
+        s_live_list = m_live_next;
+    else
+    {
+        for (ISpatial_DB* i = s_live_list; i; i = i->m_live_next)
+        {
+            if (i->m_live_next == this)
+            {
+                i->m_live_next = m_live_next;
+                break;
+            }
+        }
+    }
+
     if (m_root)
     {
         _node_destroy(m_root);
