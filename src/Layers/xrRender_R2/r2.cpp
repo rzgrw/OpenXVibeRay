@@ -530,6 +530,11 @@ void CRender::destroy()
 #endif
     q_sync_point.Destroy();
     HWOCC.occq_destroy();
+    // Release lights while the spatial DB still exists — this object is a
+    // static global, so anything left here unregisters at exit() when the
+    // DB is long gone.
+    Lights.Unload();
+    Lights_LastFrame.clear();
     xr_delete(Models);
     xr_delete(Target);
     PSLibrary.OnDestroy();
