@@ -1,6 +1,8 @@
 if (APPLE)
 
-add_library(xrRender_Metal)
+# EXCLUDE_FROM_ALL until the Metal backend compiles end-to-end (SP2 plan
+# Task 20) — build explicitly with: cmake --build build --target xrRender_Metal
+add_library(xrRender_Metal EXCLUDE_FROM_ALL)
 
 target_sources(xrRender_Metal PRIVATE
     metal_rendertarget.cpp
