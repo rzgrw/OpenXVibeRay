@@ -330,8 +330,10 @@ void CRenderDevice::ProcessEvent(const SDL_Event& event)
         const auto window = SDL_GetWindowFromID(event.window.windowID);
         if (!window)
             break;
+        // The main window must be handled even when ImGui has no viewport
+        // registered for it — otherwise resize/close/display events are lost.
         ImGuiViewport* viewport = ImGui::FindViewportByPlatformHandle(window);
-        if (!viewport)
+        if (!viewport && window != m_sdlWnd)
             break;
 
         switch (event.window.event)
@@ -348,7 +350,8 @@ void CRenderDevice::ProcessEvent(const SDL_Event& event)
         }
 
         case SDL_WINDOWEVENT_DISPLAY_CHANGED:
-            psDeviceMode.Monitor = event.window.data1;
+            if (window == m_sdlWnd)
+                psDeviceMode.Monitor = event.window.data1;
             break;
 
         case SDL_WINDOWEVENT_RESIZED:
