@@ -236,6 +236,20 @@ void CHW::EndScene() { }
 
 void CHW::Present()
 {
+    // Surface GL errors raised during the frame close to where they happened.
+    // CHK_GL is compiled out in Release, so without this drain errors pool in
+    // the queue and get blamed on unrelated code (e.g. the next texture load).
+    static u32 frame_errors_logged = 0;
+    for (GLenum err = glGetError(); err != GL_NO_ERROR; err = glGetError())
+    {
+        if (frame_errors_logged < 100)
+        {
+            ++frame_errors_logged;
+            Msg("! OpenGL: 0x%x: error raised during frame %u%s", err, Device.dwFrame,
+                frame_errors_logged == 100 ? " (limit reached, further frame errors muted)" : "");
+        }
+    }
+
 #if 0 // kept for historical reasons
     RImplementation.Target->phase_flip();
 #else
