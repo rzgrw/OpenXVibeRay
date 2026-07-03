@@ -110,18 +110,31 @@ void CRenderDevice::UpdateWindowProps()
 {
     ZoneScoped;
 
+    // Displays can disappear at any time (unplug, sleep, topology change) —
+    // never index SDL display arrays with a stale monitor number.
+    const int displayCount = SDL_GetNumVideoDisplays();
+    if (displayCount > 0 && static_cast<int>(psDeviceMode.Monitor) >= displayCount)
+    {
+        Msg("~ Monitor %u no longer exists (%d connected), falling back to the primary display",
+            psDeviceMode.Monitor, displayCount);
+        psDeviceMode.Monitor = 0;
+    }
+
     const bool windowed = psDeviceMode.WindowStyle != rsFullscreen;
     SelectResolution(windowed);
 
     // Changing monitor, unset fullscreen for the previous monitor
     // and move the window to the new monitor
-    if (SDL_GetWindowDisplayIndex(m_sdlWnd) != static_cast<int>(psDeviceMode.Monitor))
+    const int windowDisplay = SDL_GetWindowDisplayIndex(m_sdlWnd);
+    if (windowDisplay >= 0 && windowDisplay != static_cast<int>(psDeviceMode.Monitor))
     {
         SDL_SetWindowFullscreen(m_sdlWnd, SDL_DISABLE);
 
         SDL_Rect rect;
-        SDL_GetDisplayBounds(psDeviceMode.Monitor, &rect);
-        SDL_SetWindowPosition(m_sdlWnd, rect.x, rect.y);
+        if (SDL_GetDisplayBounds(psDeviceMode.Monitor, &rect) == 0)
+            SDL_SetWindowPosition(m_sdlWnd, rect.x, rect.y);
+        else
+            Msg("! SDL_GetDisplayBounds(%u) failed: %s", psDeviceMode.Monitor, SDL_GetError());
     }
 
     if (psDeviceMode.WindowStyle != rsFullscreenBorderless)
@@ -296,6 +309,11 @@ void CRenderDevice::OnErrorDialog(bool beforeDialog)
 
 void CRenderDevice::OnFatalError()
 {
+    // The OS does not release a grabbed cursor for us — without this the
+    // error dialog can be visible yet unclickable.
+    if (pInput)
+        pInput->GrabInput(false);
+
     // make it sure window will hide in any way
     SDL_SetWindowFullscreen(m_sdlWnd, SDL_FALSE);
     SDL_SetWindowAlwaysOnTop(m_sdlWnd, SDL_FALSE);

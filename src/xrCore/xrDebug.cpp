@@ -35,6 +35,11 @@
 #           define PTRACE_DETACH PT_DETACH
 #       endif
 #   endif
+#   include <unistd.h> // write/_exit in the async-signal-safe handler
+#   ifdef XR_PLATFORM_APPLE
+#       include <sys/types.h>
+#       include <sys/sysctl.h>
+#   endif
 #endif
 
 constexpr SDL_MessageBoxButtonData buttons[] =
@@ -128,7 +133,7 @@ IUserConfigHandler* xrDebug::userConfigHandler = nullptr;
 xrDebug::UnhandledExceptionFilter xrDebug::PrevFilter = nullptr;
 xrDebug::OutOfMemoryCallbackFunc xrDebug::OutOfMemoryCallback = nullptr;
 string_path xrDebug::BugReportFile;
-bool xrDebug::ErrorAfterDialog = false;
+std::atomic_bool xrDebug::ErrorAfterDialog{ false };
 bool xrDebug::ShowErrorMessage = true;
 
 #ifdef PROFILE_CRITICAL_SECTIONS
@@ -477,6 +482,19 @@ bool xrDebug::DebuggerIsPresent()
 {
 #ifdef XR_PLATFORM_WINDOWS
     return IsDebuggerPresent();
+#elif defined(XR_PLATFORM_APPLE)
+    // Apple's documented check (Technical Q&A QA1361). The PTRACE_TRACEME
+    // probe below is destructive on Darwin: PT_TRACE_ME cannot be undone
+    // from within the process (PT_DETACH is tracer-side only), leaving it
+    // permanently P_TRACED with no real tracer. Any signal after that stops
+    // the process forever — unkillable even by SIGKILL, and debuggers see
+    // "already being debugged".
+    int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()};
+    kinfo_proc info{};
+    size_t size = sizeof(info);
+    if (sysctl(mib, 4, &info, &size, nullptr, 0) != 0)
+        return false;
+    return (info.kp_proc.p_flag & P_TRACED) != 0;
 #elif defined(PTRACE_AVAILABLE)
     if (ptrace(PTRACE_TRACEME, 0, 0, 0) == -1)
         return true;
@@ -613,6 +631,35 @@ static void handler_base(const char* reason)
     xrDebug::Fail(ignoreAlways, DEBUG_INFO, nullptr, reason, nullptr, nullptr);
 }
 
+#ifndef XR_PLATFORM_WINDOWS
+// Async-signal-safe fatal-signal handler. Everything the interactive path
+// does — locks, allocation, SDL dialogs, log flushing — is forbidden inside
+// a signal handler and has produced permanently wedged processes. Write a
+// one-line marker with write(2), restore the default disposition and
+// re-raise, so the OS terminates the process properly (with a crash report)
+// instead of leaving a ghost.
+static void posix_fatal_signal_handler(int sig)
+{
+    static std::atomic_bool s_handling{ false };
+    if (s_handling.exchange(true) || xrDebug::ProcessingFailure())
+        _exit(128 + sig); // recursive or concurrent fatality — just die
+
+    char msg[64] = "! fatal signal ";
+    // async-signal-safe itoa (sig is a small positive number)
+    char digits[8];
+    int n = 0, v = sig;
+    do { digits[n++] = char('0' + v % 10); v /= 10; } while (v && n < 7);
+    size_t len = strlen(msg);
+    while (n) msg[len++] = digits[--n];
+    msg[len++] = '\n';
+    ssize_t written = write(STDERR_FILENO, msg, len);
+    (void)written;
+
+    std::signal(sig, SIG_DFL);
+    raise(sig);
+}
+#endif
+
 #if defined(XR_PLATFORM_WINDOWS)
 static void invalid_parameter_handler(const wchar_t* expression, const wchar_t* function, const wchar_t* file,
                                       unsigned int line, uintptr_t reserved)
@@ -645,15 +692,25 @@ void xrDebug::OnThreadSpawn()
 {
 #ifndef __SANITIZE_ADDRESS__
     std::signal(SIGINT,  nullptr);
+#if defined(XR_PLATFORM_WINDOWS)
     std::signal(SIGILL,  +[](int signal) { handler_base("illegal instruction"); });
     std::signal(SIGFPE,  +[](int signal) { handler_base("floating point error"); });
 #   ifdef DEBUG
     std::signal(SIGSEGV, +[](int signal) { handler_base("segmentation fault"); });
 #   endif
     std::signal(SIGABRT, +[](int signal) { handler_base("application is aborting"); });
-#if defined(XR_PLATFORM_WINDOWS)
     std::signal(SIGTERM, +[](int signal) { handler_base("termination with exit code 3"); });
 #else
+    // The interactive handler (locks + SDL dialog + allocation) is not
+    // async-signal-safe and has wedged processes into unkillable ghosts.
+    // Fatal signals get the minimal safe handler; interactive dialogs still
+    // appear for engine-level failures (VERIFY/FATAL call Fail directly).
+    std::signal(SIGILL,  posix_fatal_signal_handler);
+    std::signal(SIGFPE,  posix_fatal_signal_handler);
+#   ifdef DEBUG
+    std::signal(SIGSEGV, posix_fatal_signal_handler);
+#   endif
+    std::signal(SIGABRT, posix_fatal_signal_handler);
     // SIGTERM must stay deliverable. The interactive handler deadlocks on
     // failLock when a fatal-error dialog is already up, which makes a crashed
     // process unkillable by anything short of SIGKILL.

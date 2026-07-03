@@ -7,6 +7,14 @@
 #include "glHW.h"
 #include "xrEngine/XR_IOConsole.h"
 
+#ifdef XR_PLATFORM_APPLE
+#include <SDL_syswm.h>
+// Declared directly: including <objc/message.h> would clash with the
+// engine-wide BOOL typedef.
+extern "C" void* objc_msgSend(void);
+extern "C" void* sel_registerName(const char*);
+#endif
+
 namespace xray::render::RENDER_NAMESPACE
 {
 CHW HW;
@@ -298,7 +306,30 @@ void CHW::Present()
 
 DeviceState CHW::GetDeviceState() const
 {
-    //  TODO: OGL: Implement GetDeviceState
+#ifdef XR_PLATFORM_APPLE
+    // Submitting GL work while the window cannot present can wedge the
+    // process inside Apple's GL-on-Metal layer: the Metal command submit
+    // blocks in an uninterruptible kernel trap and the process becomes
+    // unkillable (not even SIGKILL). Report the device lost while the window
+    // is not presentable; the engine skips rendering and polls again.
+    const Uint32 flags = SDL_GetWindowFlags(m_window);
+    if (flags & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN))
+        return DeviceState::Lost;
+
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (SDL_GetWindowWMInfo(m_window, &info) && info.subsystem == SDL_SYSWM_COCOA)
+    {
+        if (void* nswindow = info.info.cocoa.window)
+        {
+            constexpr unsigned long NSWindowOcclusionStateVisible = 1ul << 1;
+            const auto occlusion = reinterpret_cast<unsigned long (*)(void*, void*)>(&objc_msgSend)(
+                nswindow, sel_registerName("occlusionState"));
+            if (!(occlusion & NSWindowOcclusionStateVisible))
+                return DeviceState::Lost;
+        }
+    }
+#endif
     return DeviceState::Normal;
 }
 

@@ -314,6 +314,11 @@ CApplication::~CApplication()
 {
     FrameMarkStart(FRAME_MARK_APPLICATION_SHUTDOWN);
 
+    // Run() normally hides the splash, but early-exit paths reach this
+    // destructor with the splash thread still live — it must not outlive
+    // the members it reads. Idempotent (no-op when already hidden).
+    HideSplash();
+
     if (g_pGamePersistent)
         g_pGamePersistent->OnAppEnd();
 

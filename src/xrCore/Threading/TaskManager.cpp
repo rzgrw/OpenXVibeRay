@@ -182,15 +182,31 @@ TaskManager::~TaskManager()
     }
 
     UnregisterThisThreadAsWorker();
+
+    // Bounded: a worker wedged inside a task must not block process exit
+    // forever — after the deadline, abandon it and detach instead of join.
+    CTimer waitTimer;
+    waitTimer.Start();
+    bool cleanShutdown = true;
     while (!workers.empty())
     {
         newWorkArrived.Set();
         Sleep(0);
+        if (waitTimer.GetElapsed_ms() > 5000)
+        {
+            Msg("! TaskManager: %zu worker(s) failed to stop within 5s, abandoning them", workers.size());
+            cleanShutdown = false;
+            break;
+        }
     }
     for (auto& thread : workerThreads)
     {
-        if (thread.joinable())
+        if (!thread.joinable())
+            continue;
+        if (cleanShutdown)
             thread.join();
+        else
+            thread.detach();
     }
 }
 
@@ -212,8 +228,21 @@ void TaskManager::UnregisterThisThreadAsWorker()
     std::lock_guard guard{ workersLock };
 
     shouldPause.store(true, std::memory_order_release);
+
+    // Bounded: this spin holds workersLock — waiting forever for a wedged
+    // task would also deadlock every other thread trying to unregister.
+    CTimer waitTimer;
+    waitTimer.Start();
     while (activeWorkersCount.load(std::memory_order_relaxed))
+    {
         Sleep(2);
+        if (waitTimer.GetElapsed_ms() > 5000)
+        {
+            Msg("! TaskManager: %d task worker(s) still active after 5s, not waiting further",
+                activeWorkersCount.load(std::memory_order_relaxed));
+            break;
+        }
+    }
 
     s_tl_worker.id = size_t(-1);
 

@@ -6,6 +6,14 @@
 #include "log.h"
 #include "xrCore/Threading/Lock.hpp"
 
+#include <cstdlib>
+#ifndef XR_PLATFORM_WINDOWS
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+static int log_lock_fd = -1;
+#endif
+
 bool LogExecCB = true;
 string_path log_file_name{};
 bool no_log = true;
@@ -231,6 +239,31 @@ void CreateLog(bool nl)
     if (no_log)
         return;
 
+#ifndef XR_PLATFORM_WINDOWS
+    // POSIX fopen has no share modes (unlike the Windows path), so two live
+    // instances would interleave writes into one log and destroy each
+    // other's backups. Hold an advisory lock next to the log for the
+    // process lifetime; if another instance owns it, switch to a
+    // pid-suffixed name. flock releases on any kind of process death.
+    if (!unique_logs)
+    {
+        string_path lock_name;
+        strconcat(lock_name, log_file_name, ".lock");
+        log_lock_fd = ::open(lock_name, O_CREAT | O_RDWR | O_CLOEXEC, 0644);
+        if (log_lock_fd != -1 && ::flock(log_lock_fd, LOCK_EX | LOCK_NB) != 0)
+        {
+            ::close(log_lock_fd);
+            log_lock_fd = -1;
+
+            string_path base;
+            xr_strcpy(base, log_file_name);
+            if (pstr ext = strext(base))
+                *ext = 0;
+            xr_sprintf(log_file_name, "%s_pid%d.log", base, int(getpid()));
+        }
+    }
+#endif
+
     if (!unique_logs)
     {
         // Alun: Backup existing log
@@ -254,6 +287,16 @@ void CreateLog(bool nl)
 
     if (strstr(Core.Params, "-force_flushlog"))
         ForceFlushLog = true;
+
+    // Buffered lines were lost whenever the process died without reaching
+    // CloseLog (observed as truncated logs after crashes). exit() paths at
+    // least get a final flush this way.
+    static bool atexit_registered = false;
+    if (!atexit_registered)
+    {
+        atexit_registered = true;
+        std::atexit(FlushLog);
+    }
 }
 
 void CloseLog(void)
