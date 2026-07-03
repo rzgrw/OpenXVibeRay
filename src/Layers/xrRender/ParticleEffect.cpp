@@ -42,7 +42,7 @@ static void ApplyTexgen(CBackend& cmd_list, const Fmatrix& mVP)
         0.0f, 0.0f, 1.0f, 0.0f,
         0.5f, 0.5f, 0.0f, 1.0f
     };
-#elif defined(USE_OGL)
+#elif defined(USE_OGL) || defined(USE_METAL)
     Fmatrix mTexelAdjust =
     {
         0.5f, 0.0f, 0.0f, 0.0f,
@@ -642,7 +642,7 @@ void CParticleEffect::Render(CBackend& cmd_list, float, bool use_fast_geo)
     TAL_SCOPED_TASK_NAMED("CParticleEffect::Render()");
 #endif // _GPA_ENABLED
 
-#ifdef USE_OGL
+#if defined(USE_OGL) || defined(USE_METAL)
     // Due to the big impact on performance
     const float distSQ = Device.vCameraPosition.distance_to_sqr(m_InitialPosition) + EPS;
     if (distSQ > _sqr(100.f*psVisDistance))

@@ -2,6 +2,8 @@
 
 #if defined(USE_OGL)
 #include "../xrRenderGL/glState.h"
+#elif defined(USE_METAL)
+#include "../xrRenderMetal/metalState.h"
 #endif
 
 namespace xray::render::RENDER_NAMESPACE

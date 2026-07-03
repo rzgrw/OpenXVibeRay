@@ -21,7 +21,7 @@ public:
     }
     ~dxPixEventWrapper() { cmd_list.gpu_mark_end(); }
 };
-#elif defined(USE_OGL)
+#elif defined(USE_OGL) || defined(USE_METAL)
 #   define PIX_EVENT(Name) dxPixEventWrapper pixEvent##Name(#Name)
 #   define PIX_EVENT_CTX(C,Name) dxPixEventWrapper pixEvent##Name(#Name)
 
@@ -33,6 +33,6 @@ public:
 };
 #else
 #   error No graphics API selected or enabled!
-#endif // USE_OGL
+#endif // USE_OGL / USE_METAL
 #endif // MASTER_GOLD
 } // namespace xray::render::RENDER_NAMESPACE
