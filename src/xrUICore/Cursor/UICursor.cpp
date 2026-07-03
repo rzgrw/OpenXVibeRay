@@ -25,16 +25,24 @@ void CUICursor::InitInternal()
 
 void CUICursor::OnDeviceReset()
 {
-    correction.x = UI_BASE_WIDTH  / (float)Device.m_rcWindowClient.w;
-    correction.y = UI_BASE_HEIGHT / (float)Device.m_rcWindowClient.h;
+    if (Device.m_rcWindowClient.w > 0 && Device.m_rcWindowClient.h > 0)
+    {
+        correction.x = UI_BASE_WIDTH  / (float)Device.m_rcWindowClient.w;
+        correction.y = UI_BASE_HEIGHT / (float)Device.m_rcWindowClient.h;
+    }
+
+    // Compare the real window client size against the display the window is
+    // actually on — both in the same (point) coordinate space. Render size
+    // is in pixels and can legitimately exceed the desktop (the window is
+    // scaled to fit), so it must not participate in this decision.
+    int displayIndex = SDL_GetWindowDisplayIndex(Device.m_sdlWnd);
+    if (displayIndex < 0)
+        displayIndex = 0;
 
     SDL_Rect display;
-    if (0 == SDL_GetDisplayBounds(0, &display))
-    {
-        const u32 screen_size_x = display.w - display.x;
-        const u32 screen_size_y = display.h - display.y;
-        m_bound_to_system_cursor = screen_size_y >= Device.dwHeight && screen_size_x >= Device.dwWidth;
-    }
+    if (0 == SDL_GetDisplayBounds(displayIndex, &display))
+        m_bound_to_system_cursor = display.w >= Device.m_rcWindowClient.w && display.h >= Device.m_rcWindowClient.h;
+
     if (m_bound_to_system_cursor) // sanity
         Device.UpdateWindowRects();
 }
