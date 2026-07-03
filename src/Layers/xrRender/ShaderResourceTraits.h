@@ -156,6 +156,22 @@ static GLuint GLGeneratePipeline(pcstr name, GLuint ps, GLuint vs, GLuint gs)
     GLuint pp;
     CHK_GL(glGenProgramPipelines(1, &pp));
     R_ASSERT(pp);
+#ifdef XR_PLATFORM_APPLE
+    // Apple's GL refuses to draw when the pipeline has no fragment stage,
+    // although the spec allows that for depth-only passes (the "null" pixel
+    // shader has no program). Substitute an empty fragment program.
+    if (!ps)
+    {
+        static GLuint dummy_fs = 0;
+        if (!dummy_fs)
+        {
+            pcstr source = "#version 410 core\nvoid main() {}\n";
+            dummy_fs = GLCompileShader<GL_FRAGMENT_SHADER>(&source, 1, "null_fs_stub").second;
+            R_ASSERT(dummy_fs);
+        }
+        ps = dummy_fs;
+    }
+#endif
     CHK_GL(glUseProgramStages(pp, GL_FRAGMENT_SHADER_BIT, ps));
     CHK_GL(glUseProgramStages(pp, GL_VERTEX_SHADER_BIT,   vs));
     CHK_GL(glUseProgramStages(pp, GL_GEOMETRY_SHADER_BIT, gs));

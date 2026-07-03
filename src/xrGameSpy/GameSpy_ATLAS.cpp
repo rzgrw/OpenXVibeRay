@@ -18,14 +18,18 @@ CGameSpy_ATLAS::~CGameSpy_ATLAS()
 void CGameSpy_ATLAS::Init()
 {
     SCResult init_res = scInitialize(GAMESPY_GAMEID, &m_interface);
-    VERIFY(init_res == SCResult_NO_ERROR);
     if (init_res != SCResult_NO_ERROR)
     {
-        Msg("! GameSpy ATLAS: failed to initialize, error code: %d", init_res);
+        // GameSpy's backend shut down in 2014 — failing here is expected, not an engine error
+        Msg("~ GameSpy ATLAS: unavailable, error code: %d", init_res);
     }
 }
 
-void CGameSpy_ATLAS::Think() { scThink(m_interface); }
+void CGameSpy_ATLAS::Think()
+{
+    if (m_interface)
+        scThink(m_interface);
+}
 shared_str const CGameSpy_ATLAS::TryToTranslate(GHTTPResult httpResult) { return "mp_gamespy_http_error"; }
 shared_str const CGameSpy_ATLAS::TryToTranslate(WSLoginValue loginValue) { return "mp_gamespy_ws_login_error"; }
 shared_str const CGameSpy_ATLAS::TryToTranslate(SCResult result) { return "mp_gamespy_atlas_error"; }

@@ -5,6 +5,7 @@
 !.editorconfig
 !.vscode
 !.claude/
+.claude/worktrees/
 
 # exclude binaries and temporary files
 [Bb]in/

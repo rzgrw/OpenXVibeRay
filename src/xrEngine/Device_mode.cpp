@@ -125,7 +125,30 @@ void CRenderDevice::UpdateWindowProps()
     }
 
     if (psDeviceMode.WindowStyle != rsFullscreenBorderless)
-        SDL_SetWindowSize(m_sdlWnd, psDeviceMode.Width, psDeviceMode.Height);
+    {
+        // A window larger than the desktop gets clamped by the OS (macOS
+        // constrains it to the screen), leaving the drawable smaller than the
+        // engine assumes. Scale the window down to fit, preserving aspect —
+        // rendering stays at the requested resolution and the present blit
+        // scales it into the actual drawable.
+        int w = int(psDeviceMode.Width), h = int(psDeviceMode.Height);
+        SDL_Rect usable;
+        if (SDL_GetDisplayUsableBounds(psDeviceMode.Monitor, &usable) == 0 && (w > usable.w || h > usable.h))
+        {
+            const float scale = std::min(float(usable.w) / float(w), float(usable.h) / float(h));
+            w = int(float(w) * scale);
+            h = int(float(h) * scale);
+            Msg("~ Window %ux%u exceeds display %u usable area %dx%d, window scaled to %dx%d",
+                psDeviceMode.Width, psDeviceMode.Height, psDeviceMode.Monitor, usable.w, usable.h, w, h);
+        }
+
+        SDL_SetWindowSize(m_sdlWnd, w, h);
+
+        if (w != int(psDeviceMode.Width)) // was clamped — keep it fully on screen
+            SDL_SetWindowPosition(m_sdlWnd,
+                SDL_WINDOWPOS_CENTERED_DISPLAY(psDeviceMode.Monitor),
+                SDL_WINDOWPOS_CENTERED_DISPLAY(psDeviceMode.Monitor));
+    }
     else
     {
         SDL_DisplayMode current;
@@ -162,7 +185,8 @@ void CRenderDevice::UpdateWindowProps()
     ImGuiIO& io = ImGui::GetIO();
 
     io.DisplaySize = { static_cast<float>(psDeviceMode.Width), static_cast<float>(psDeviceMode.Height) };
-    io.DisplayFramebufferScale = ImVec2{ float(dwWidth / m_rcWindowClient.w), float(dwHeight / m_rcWindowClient.h) };
+    if (m_rcWindowClient.w > 0 && m_rcWindowClient.h > 0)
+        io.DisplayFramebufferScale = ImVec2{ float(dwWidth) / float(m_rcWindowClient.w), float(dwHeight) / float(m_rcWindowClient.h) };
 }
 
 void CRenderDevice::UpdateWindowRects()
