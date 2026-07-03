@@ -35,6 +35,11 @@
 #           define PTRACE_DETACH PT_DETACH
 #       endif
 #   endif
+#   ifdef XR_PLATFORM_APPLE
+#       include <sys/types.h>
+#       include <sys/sysctl.h>
+#       include <unistd.h>
+#   endif
 #endif
 
 constexpr SDL_MessageBoxButtonData buttons[] =
@@ -477,6 +482,19 @@ bool xrDebug::DebuggerIsPresent()
 {
 #ifdef XR_PLATFORM_WINDOWS
     return IsDebuggerPresent();
+#elif defined(XR_PLATFORM_APPLE)
+    // Apple's documented check (Technical Q&A QA1361). The PTRACE_TRACEME
+    // probe below is destructive on Darwin: PT_TRACE_ME cannot be undone
+    // from within the process (PT_DETACH is tracer-side only), leaving it
+    // permanently P_TRACED with no real tracer. Any signal after that stops
+    // the process forever — unkillable even by SIGKILL, and debuggers see
+    // "already being debugged".
+    int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()};
+    kinfo_proc info{};
+    size_t size = sizeof(info);
+    if (sysctl(mib, 4, &info, &size, nullptr, 0) != 0)
+        return false;
+    return (info.kp_proc.p_flag & P_TRACED) != 0;
 #elif defined(PTRACE_AVAILABLE)
     if (ptrace(PTRACE_TRACEME, 0, 0, 0) == -1)
         return true;
