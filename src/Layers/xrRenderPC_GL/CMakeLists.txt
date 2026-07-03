@@ -414,6 +414,11 @@ target_link_libraries(xrRender_GL
     xrImGui
 )
 
+if (APPLE)
+    # objc runtime for the NSWindow occlusion query in CHW::GetDeviceState
+    target_link_libraries(xrRender_GL PRIVATE objc)
+endif()
+
 target_compile_definitions(xrRender_GL
     PRIVATE
     XRRENDER_GL_EXPORTS
