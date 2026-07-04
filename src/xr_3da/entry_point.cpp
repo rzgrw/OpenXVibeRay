@@ -33,10 +33,13 @@ std::array s_render_modules =
 #ifdef XR_PLATFORM_WINDOWS
     xray::render::render_r4::GetRendererModule(),
 #endif
+    // GL first: it is the default/fallback renderer. Metal stays explicit
+    // opt-in ("renderer renderer_metal") until it reaches parity (SP2 Tasks
+    // 22-24) — the auto-select fallback must never land on it meanwhile.
+    xray::render::render_gl::GetRendererModule(),
 #if defined(XR_PLATFORM_APPLE) && defined(XR_METAL_RENDERER)
     xray::render::render_metal::GetRendererModule(),
 #endif
-    xray::render::render_gl::GetRendererModule(),
 };
 
 struct tracy_raii

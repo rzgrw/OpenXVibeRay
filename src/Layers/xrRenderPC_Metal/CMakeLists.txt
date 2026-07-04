@@ -6,11 +6,15 @@ add_library(xrRender_Metal EXCLUDE_FROM_ALL)
 
 target_sources(xrRender_Metal PRIVATE
     dxImGuiRender.cpp           # Metal ImGui backend (replaces ../xrRender/dxImGuiRender.cpp)
-    metal_rendertarget.cpp
     metal_rendertarget.h
+    metal_rendertarget_accum_direct.cpp
+    metal_rendertarget_build_textures.cpp
+    metal_rendertarget_phase_combine.cpp
+    metal_rendertarget_phase_flip.cpp
+    metal_rendertarget_u_set_rt.cpp
     metal_shaders.cpp
     r2_test_hw.cpp
-    # r2_R_sun.cpp              # TODO Task 17: Metal sun render pass
+    r2_R_sun.cpp
     stdafx.cpp
     stdafx.h
     xrRender_Metal.cpp
@@ -338,6 +342,7 @@ target_sources(xrRender_Metal PRIVATE
     # xrRenderMetal hardware abstraction layer sources
     ../xrRenderMetal/Blender_Recorder_Metal.cpp
     ../xrRenderMetal/CommonTypes.h
+    ../xrRenderMetal/metal_cpp_impl.cpp
     ../xrRenderMetal/metalBufferUtils.cpp
     ../xrRenderMetal/metalConstantBuffer.cpp
     ../xrRenderMetal/metalConstantBuffer.h
@@ -451,14 +456,14 @@ target_precompile_headers(xrRender_Metal
     $<$<COMPILE_LANGUAGE:CXX>:stdafx.h>
 )
 
-# metalHW.cpp defines NS_PRIVATE_IMPLEMENTATION / MTL_PRIVATE_IMPLEMENTATION /
-# CA_PRIVATE_IMPLEMENTATION before any metal-cpp headers are included.  Those
-# macros must appear before the first inclusion of Metal/Metal.hpp, which the
-# precompiled header would inject transparently.  Skip PCH for this file so
-# the defines take effect in the correct order.
+# metal_cpp_impl.cpp defines NS/CA/MTL_PRIVATE_IMPLEMENTATION before the first
+# inclusion of the metal-cpp headers — the single TU that instantiates the
+# metal-cpp selector/class symbols. Both the PCH and unity batching would
+# inject <Metal/Metal.hpp> (via stdafx.h) ahead of the defines, so exclude
+# this file from both.
 set_source_files_properties(
-    ../xrRenderMetal/metalHW.cpp
-    PROPERTIES SKIP_PRECOMPILE_HEADERS ON
+    ../xrRenderMetal/metal_cpp_impl.cpp
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON SKIP_UNITY_BUILD_INCLUSION ON
 )
 
 if (BUILD_SHARED_LIBS)

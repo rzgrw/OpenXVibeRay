@@ -1,5 +1,17 @@
 #pragma once
 
+// metal-cpp must come FIRST: it pulls <objc/objc.h>, whose `typedef bool BOOL`
+// conflicts with the engine's `typedef int32_t BOOL` (PlatformApple.inl guards
+// its typedef on OBJC_BOOL_DEFINED, so Metal TUs use the ObjC definition).
+// The ObjC convenience macros would break luabind (`nil`) and engine code —
+// drop them; metal-cpp itself never uses them after this point.
+#include <Metal/Metal.hpp>
+#include <QuartzCore/QuartzCore.hpp>
+#undef nil
+#undef Nil
+#undef YES
+#undef NO
+
 #include "xrEngine/stdafx.h"
 
 #define R_GL 0

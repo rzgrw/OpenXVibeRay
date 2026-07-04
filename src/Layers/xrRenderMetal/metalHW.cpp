@@ -1,10 +1,7 @@
 // metalHW.cpp — implementation of the Metal hardware device.
 // Uses metal-cpp C++ wrappers for the Metal API.
-// The PRIVATE_IMPLEMENTATION macros must be defined in exactly one TU.
-
-#define NS_PRIVATE_IMPLEMENTATION
-#define MTL_PRIVATE_IMPLEMENTATION
-#define CA_PRIVATE_IMPLEMENTATION
+// (The metal-cpp PRIVATE_IMPLEMENTATION TU is metal_cpp_impl.cpp — it needs
+// exemption from unity builds AND PCH, which this file doesn't have.)
 
 #include "stdafx.h"
 #pragma hdrstop
@@ -228,6 +225,14 @@ void CHW::EndScene()
     // buffer must not be committed while an encoder is recording.
     RPManager.OnFrameEnd();
 
+    // rt_Base is a plain offscreen texture (metalSH_RT has no swapchain
+    // wiring): copy the final frame into the CAMetalDrawable before the
+    // command buffer is committed.  The GL backend does the equivalent in
+    // CHW::Present via glBlitFramebuffer — see
+    // metal_rendertarget_phase_flip.cpp.
+    if (RImplementation.Target)
+        RImplementation.Target->phase_flip();
+
     pCurrentCommandBuffer->commit();
     pCurrentCommandBuffer->release();
     pCurrentCommandBuffer = nullptr;
@@ -235,6 +240,8 @@ void CHW::EndScene()
 
 void CHW::Present()
 {
+    // The frame image was already copied into the drawable by
+    // CRenderTarget::phase_flip() (called from EndScene) — just present.
     if (pCurrentDrawable)
     {
         pCurrentDrawable->present();

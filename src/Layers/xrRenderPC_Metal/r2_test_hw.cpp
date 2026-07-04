@@ -1,9 +1,15 @@
 #include "stdafx.h"
 
+namespace xray::render::RENDER_NAMESPACE
+{
 bool xrRender_test_hw()
 {
-    // Check if Metal is available.
-    // For now, just return true on Apple platforms.
-    // Real check via MTL::CreateSystemDefaultDevice() will come in Task 9.
+    // Metal is available iff the system provides a default device
+    // (any Apple Silicon Mac; Intel Macs with Metal-capable GPUs too).
+    MTL::Device* device = MTL::CreateSystemDefaultDevice();
+    if (!device)
+        return false;
+    device->release();
     return true;
 }
+} // namespace xray::render::RENDER_NAMESPACE

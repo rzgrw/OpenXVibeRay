@@ -28,6 +28,16 @@ void CRenderTarget::mark_msaa_edges()
     pv++;
     pv->set( 1,  1, d_Z, d_W, C, 1, 1, 0, 0);
     pv++;
+#elif defined(USE_METAL)
+    // Metal texture space is top-left origin like D3D — mirror the DX11 UVs
+    pv->set(-1, -1,   0, d_W, C, 0, 1, 0, 0);
+    pv++;
+    pv->set(-1,  1, d_Z, d_W, C, 0, 0, 0, 0);
+    pv++;
+    pv->set( 1, -1, d_Z, d_W, C, 1, 1, 0, 0);
+    pv++;
+    pv->set( 1,  1, d_Z, d_W, C, 1, 0, 0, 0);
+    pv++;
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -35,6 +45,11 @@ void CRenderTarget::mark_msaa_edges()
 #if defined(USE_DX11) // XXX: remove this difference
     u_setrt(RCache, nullptr, nullptr, nullptr, rt_MSAADepth);
 #elif defined(USE_OGL)
+    u_setrt(RCache, Device.dwWidth, Device.dwHeight, 0, 0, 0, rt_MSAADepth->pZRT);
+#elif defined(USE_METAL)
+    // NOTE: handle 0 on color slot 0 aliases the backbuffer drawable in the
+    // Metal render-pass manager; this stencil-only pass is unreachable until
+    // the backend reports MSAA support — revisit in Task 20 (depth-only pass).
     u_setrt(RCache, Device.dwWidth, Device.dwHeight, 0, 0, 0, rt_MSAADepth->pZRT);
 #endif
     RCache.set_Element(s_mark_msaa_edges->E[0]);

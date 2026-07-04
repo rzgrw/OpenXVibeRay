@@ -9,7 +9,10 @@
 
 namespace xray::render::RENDER_NAMESPACE
 {
-constexpr pcstr RENDERER_R3_MODE   = "renderer_r3";   // id 4
+// Distinct token: GL also serves the R3 pipeline level under "renderer_r3",
+// and existing configs must keep resolving to GL. Metal is explicit opt-in
+// ("renderer renderer_metal") until it reaches parity (plan Tasks 22-24).
+constexpr pcstr RENDERER_METAL_MODE = "renderer_metal"; // R3 pipeline level (id 4)
 
 class RMetalRendererModule final : public RendererModule
 {
@@ -32,7 +35,7 @@ public:
 
         if (CheckCanAddMode())
         {
-            modes.emplace_back(RENDERER_R3_MODE, 4);
+            modes.emplace_back(RENDERER_METAL_MODE, 4);
         }
         return modes;
     }

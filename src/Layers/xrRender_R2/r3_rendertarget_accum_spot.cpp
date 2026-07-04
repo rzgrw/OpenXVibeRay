@@ -121,6 +121,15 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
             0.0f, 0.0f, 0.5f * fRange, 0.0f,
             view_dim / 2.f + view_sx + fTexelOffs, view_dim / 2.f + view_sy + fTexelOffs, 0.5f + fBias, 1.0f
         };
+#elif defined(USE_METAL)
+        // Metal: top-left origin and [0..1] depth like D3D — DX-style matrix
+        Fmatrix m_TexelAdjust =
+        {
+            view_dim / 2.f, 0.0f, 0.0f, 0.0f,
+            0.0f, -view_dim / 2.f, 0.0f, 0.0f,
+            0.0f, 0.0f, fRange, 0.0f,
+            view_dim / 2.f + view_sx + fTexelOffs, view_dim / 2.f + view_sy + fTexelOffs, fBias, 1.0f
+        };
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -150,6 +159,15 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
             0.0f, view_dim / 2.f, 0.0f, 0.0f,
             0.0f, 0.0f, 0.5f * fRange, 0.0f,
             view_dim / 2.f + view_sx + fTexelOffs, view_dim / 2.f + view_sy + fTexelOffs, 0.5f + fBias, 1.0f
+        };
+#elif defined(USE_METAL)
+        // Metal: top-left origin and [0..1] depth like D3D — DX-style matrix
+        Fmatrix m_TexelAdjust2 =
+        {
+            view_dim / 2.f, 0.0f, 0.0f, 0.0f,
+            0.0f, -view_dim / 2.f, 0.0f, 0.0f,
+            0.0f, 0.0f, fRange, 0.0f,
+            view_dim / 2.f + view_sx + fTexelOffs, view_dim / 2.f + view_sy + fTexelOffs, fBias, 1.0f
         };
 #else
 #   error No graphics API selected or enabled!
@@ -247,6 +265,8 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
                 cmd_list.StateManager.SetSampleMask(0xffffffff);
 #elif defined(USE_OGL)
                 VERIFY(!"Only optimized MSAA is supported in OpenGL");
+#elif defined(USE_METAL)
+                VERIFY(!"Only optimized MSAA is supported on Metal");
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -300,6 +320,8 @@ void CRenderTarget::accum_spot(CBackend& cmd_list, light* L)
                 cmd_list.StateManager.SetSampleMask(0xffffffff);
 #elif defined(USE_OGL)
                 VERIFY(!"Only optimized MSAA is supported in OpenGL");
+#elif defined(USE_METAL)
+                VERIFY(!"Only optimized MSAA is supported on Metal");
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -384,6 +406,15 @@ void CRenderTarget::accum_volumetric(CBackend& cmd_list, light* L)
             0.0f, 0.0f, 0.5f * fRange, 0.0f,
             view_dim / 2.f + view_sx + fTexelOffs, view_dim / 2.f + view_sy + fTexelOffs, 0.5f + fBias, 1.0f
         };
+#elif defined(USE_METAL)
+        // Metal: top-left origin and [0..1] depth like D3D — DX-style matrix
+        Fmatrix m_TexelAdjust =
+        {
+            view_dim / 2.f, 0.0f, 0.0f, 0.0f,
+            0.0f, -view_dim / 2.f, 0.0f, 0.0f,
+            0.0f, 0.0f, fRange, 0.0f,
+            view_dim / 2.f + view_sx + fTexelOffs, view_dim / 2.f + view_sy + fTexelOffs, fBias, 1.0f
+        };
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -414,6 +445,15 @@ void CRenderTarget::accum_volumetric(CBackend& cmd_list, light* L)
             0.0f, view_dim / 2.f, 0.0f, 0.0f,
             0.0f, 0.0f, 0.5f * fRange, 0.0f,
             view_dim / 2.f + view_sx + fTexelOffs, view_dim / 2.f + view_sy + fTexelOffs, 0.5f + fBias, 1.0f
+        };
+#elif defined(USE_METAL)
+        // Metal: top-left origin and [0..1] depth like D3D — DX-style matrix
+        Fmatrix m_TexelAdjust2 =
+        {
+            view_dim / 2.f, 0.0f, 0.0f, 0.0f,
+            0.0f, -view_dim / 2.f, 0.0f, 0.0f,
+            0.0f, 0.0f, fRange, 0.0f,
+            view_dim / 2.f + view_sx + fTexelOffs, view_dim / 2.f + view_sy + fTexelOffs, fBias, 1.0f
         };
 #else
 #   error No graphics API selected or enabled!

@@ -116,7 +116,9 @@ inline int GetExceptionCode()
 inline void convert_path_separators(char * path);
 
 #include <inttypes.h>
+#ifndef OBJC_BOOL_DEFINED // Metal TUs include <objc/objc.h> first; its BOOL wins there
 typedef int32_t BOOL;
+#endif
 typedef uint16_t WORD;
 typedef uint32_t DWORD;
 typedef int32_t LONG;
