@@ -303,6 +303,8 @@ target_sources_grouped(
     TARGET xrEngine
     NAME "Render\\Execution & 3D"
     FILES
+    AgentBridge.cpp
+    AgentBridge.h
     device.cpp
     device.h
     Device_create.cpp

@@ -1,0 +1,480 @@
+#include "stdafx.h"
+#include "AgentBridge.h"
+
+CAgentBridge* g_agent_bridge = nullptr;
+
+#ifndef XR_PLATFORM_WINDOWS
+
+#include "XR_IOConsole.h"
+#include "IGame_Level.h"
+#include "xrScriptEngine/script_engine.hpp"
+#include <lua.hpp>
+
+#include <SDL.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <poll.h>
+#include <unistd.h>
+
+static int s_clientFd = -1; // owned by socket thread only
+
+void CAgentBridge::Initialize()
+{
+    pcstr opt = strstr(Core.Params, "-agent_bridge");
+    if (!opt || g_agent_bridge)
+        return;
+
+    string_path path{};
+    // optional explicit path after the flag
+    if (1 != sscanf(opt + xr_strlen("-agent_bridge"), " %s", path) || path[0] == '-')
+        FS.update_path(path, "$app_data_root$", "agent_bridge.sock");
+    convert_path_separators(path); // FS paths use '\' — bind() needs the real POSIX path
+
+    g_agent_bridge = xr_new<CAgentBridge>(path);
+}
+
+void CAgentBridge::Destroy() { xr_delete(g_agent_bridge); }
+
+CAgentBridge::CAgentBridge(const char* socketPath)
+{
+    xr_strcpy(m_socketPath, socketPath);
+    ::unlink(m_socketPath); // stale socket from a crashed run
+
+    m_listenFd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    R_ASSERT2(m_listenFd >= 0, "agent_bridge: socket() failed");
+
+    sockaddr_un addr{};
+    addr.sun_family = AF_UNIX;
+    xr_strcpy(addr.sun_path, m_socketPath);
+    R_ASSERT2(0 == ::bind(m_listenFd, (sockaddr*)&addr, sizeof(addr)), m_socketPath);
+    R_ASSERT2(0 == ::listen(m_listenFd, 1), "agent_bridge: listen() failed");
+
+    m_thread = std::thread([this] { SocketThreadProc(); });
+    Msg("* agent_bridge: listening on %s", m_socketPath);
+}
+
+CAgentBridge::~CAgentBridge()
+{
+    m_shutdown.store(true, std::memory_order_release);
+    if (m_listenFd >= 0)
+        ::close(m_listenFd); // wakes the accept poll
+    if (m_thread.joinable())
+        m_thread.join(); // bounded: poll timeouts are <=100ms
+    ::unlink(m_socketPath);
+    Msg("* agent_bridge: closed");
+}
+
+void CAgentBridge::SocketThreadProc()
+{
+    std::string inbuf;
+    while (!m_shutdown.load(std::memory_order_acquire))
+    {
+        if (s_clientFd < 0) // accept phase
+        {
+            pollfd p{ m_listenFd, POLLIN, 0 };
+            if (::poll(&p, 1, 100) <= 0)
+                continue;
+            s_clientFd = ::accept(m_listenFd, nullptr, nullptr);
+            inbuf.clear();
+            continue;
+        }
+
+        // flush queued responses (single writer: this thread)
+        for (;;)
+        {
+            std::string out;
+            {
+                std::lock_guard guard{ m_lock };
+                if (m_responses.empty())
+                    break;
+                out = std::move(m_responses.front());
+                m_responses.pop_front();
+            }
+            if (::write(s_clientFd, out.c_str(), out.size()) < 0)
+            {
+                ::close(s_clientFd);
+                s_clientFd = -1;
+                break;
+            }
+        }
+        if (s_clientFd < 0)
+            continue;
+
+        pollfd p{ s_clientFd, POLLIN, 0 };
+        const int rc = ::poll(&p, 1, 20); // short: responses need timely flushing
+        if (rc <= 0)
+            continue;
+
+        char chunk[4096];
+        const ssize_t n = ::read(s_clientFd, chunk, sizeof(chunk));
+        if (n <= 0) // disconnect: drop pending work, re-accept
+        {
+            ::close(s_clientFd);
+            s_clientFd = -1;
+            std::lock_guard guard{ m_lock };
+            m_requests.clear();
+            m_responses.clear();
+            continue;
+        }
+        inbuf.append(chunk, size_t(n));
+
+        size_t nl;
+        while ((nl = inbuf.find('\n')) != std::string::npos)
+        {
+            std::string line = inbuf.substr(0, nl);
+            inbuf.erase(0, nl + 1);
+            if (line.empty())
+                continue;
+            std::lock_guard guard{ m_lock };
+            m_requests.push_back(std::move(line));
+        }
+    }
+    if (s_clientFd >= 0)
+    {
+        ::close(s_clientFd);
+        s_clientFd = -1;
+    }
+}
+
+static std::string escape_payload(std::string s)
+{
+    size_t pos = 0;
+    while ((pos = s.find('\n', pos)) != std::string::npos)
+    {
+        s.replace(pos, 1, "\\n");
+        pos += 2;
+    }
+    return s;
+}
+
+void CAgentBridge::Respond(const std::string& id, bool ok, const std::string& payload)
+{
+    std::string line = id + (ok ? " ok" : " err");
+    if (!payload.empty())
+        line += " " + escape_payload(payload);
+    line += "\n";
+    std::lock_guard guard{ m_lock };
+    m_responses.push_back(std::move(line));
+}
+
+namespace
+{
+    void push_key_event(SDL_Keycode kc, bool down)
+    {
+        SDL_Event e{};
+        e.type = down ? SDL_KEYDOWN : SDL_KEYUP;
+        e.key.timestamp = SDL_GetTicks();
+        e.key.windowID = SDL_GetWindowID(Device.m_sdlWnd);
+        e.key.state = down ? SDL_PRESSED : SDL_RELEASED;
+        e.key.keysym.sym = kc;
+        e.key.keysym.scancode = SDL_GetScancodeFromKey(kc);
+        SDL_PushEvent(&e);
+    }
+
+    void push_btn_event(u8 button, bool down)
+    {
+        SDL_Event e{};
+        e.type = down ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP;
+        e.button.timestamp = SDL_GetTicks();
+        e.button.windowID = SDL_GetWindowID(Device.m_sdlWnd);
+        e.button.button = button;
+        e.button.state = down ? SDL_PRESSED : SDL_RELEASED;
+        e.button.clicks = 1;
+        SDL_PushEvent(&e);
+    }
+} // namespace
+
+void CAgentBridge::OnFrame()
+{
+    // taps: the down was pushed last frame; release now so the game saw one full frame held
+    while (!m_pendingKeyUps.empty())
+    {
+        push_key_event(SDL_Keycode(m_pendingKeyUps.front()), false);
+        m_pendingKeyUps.pop_front();
+    }
+    while (!m_pendingBtnUps.empty())
+    {
+        push_btn_event(m_pendingBtnUps.front(), false);
+        m_pendingBtnUps.pop_front();
+    }
+
+    for (;;)
+    {
+        std::string line;
+        {
+            std::lock_guard guard{ m_lock };
+            if (m_requests.empty())
+                return;
+            line = std::move(m_requests.front());
+            m_requests.pop_front();
+        }
+        HandleRequest(line);
+    }
+}
+
+void CAgentBridge::HandleRequest(const std::string& line)
+{
+    const size_t sp1 = line.find(' ');
+    const std::string id = line.substr(0, sp1);
+    if (sp1 == std::string::npos)
+    {
+        Respond(id, false, "missing verb");
+        return;
+    }
+    const size_t sp2 = line.find(' ', sp1 + 1);
+    const std::string verb = line.substr(sp1 + 1, sp2 == std::string::npos ? std::string::npos : sp2 - sp1 - 1);
+    const std::string payload = sp2 == std::string::npos ? "" : line.substr(sp2 + 1);
+
+    bool ok = true;
+    std::string result;
+    if (verb == "hello")
+        result = std::string("agent_bridge v1 ") + Core.ApplicationName;
+    else if (verb == "bye")
+    {
+        Respond(id, true, "");
+        return; // socket thread notices the client closing
+    }
+    else if (verb == "cmd")   result = VerbCmd(payload, ok);
+    else if (verb == "lua")   result = VerbLua(payload, ok);
+    else if (verb == "key")   result = VerbKey(payload, ok);
+    else if (verb == "mouse") result = VerbMouse(payload, ok);
+    else if (verb == "state") result = VerbState(ok);
+    else if (verb == "shot")  result = VerbShot(payload, ok);
+    else { ok = false; result = "unknown verb: " + verb; }
+
+    Respond(id, ok, result);
+}
+
+// ---- cmd ----
+
+namespace
+{
+    std::string* s_capture = nullptr;
+    void capture_log(void* /*context*/, const char* line)
+    {
+        if (s_capture && line)
+        {
+            if (!s_capture->empty())
+                *s_capture += '\n';
+            *s_capture += line;
+        }
+    }
+} // namespace
+
+std::string CAgentBridge::VerbCmd(const std::string& payload, bool& ok)
+{
+    if (payload.empty()) { ok = false; return "empty command"; }
+    if (!Console)        { ok = false; return "console not ready"; }
+
+    std::string captured;
+    s_capture = &captured;
+    const LogCallback prev = SetLogCB(LogCallback(capture_log, nullptr));
+    Console->Execute(payload.c_str());
+    SetLogCB(prev);
+    s_capture = nullptr;
+    return captured;
+}
+
+// ---- lua ----
+
+namespace
+{
+    // shallow stringification of the value at absolute stack index i
+    std::string lua_value_to_string(lua_State* L, int i)
+    {
+        if (lua_istable(L, i))
+        {
+            std::string out = "{";
+            lua_pushnil(L);
+            bool first = true;
+            while (lua_next(L, i))
+            {
+                if (!first)
+                    out += ", ";
+                first = false;
+                // key (string keys verbatim; others via tostring on a COPY —
+                // lua_tostring on the live key would corrupt lua_next iteration)
+                if (lua_type(L, -2) == LUA_TSTRING)
+                    out += lua_tostring(L, -2);
+                else
+                {
+                    lua_pushvalue(L, -2);
+                    pcstr ks = lua_tostring(L, -1);
+                    out += ks ? ks : luaL_typename(L, -1);
+                    lua_pop(L, 1);
+                }
+                out += "=";
+                pcstr vs = lua_tostring(L, -1); // no recursion into nested tables
+                out += vs ? vs : luaL_typename(L, -1);
+                lua_pop(L, 1);
+            }
+            out += "}";
+            return out;
+        }
+        pcstr s = lua_tostring(L, i);
+        return s ? s : luaL_typename(L, i);
+    }
+} // namespace
+
+std::string CAgentBridge::VerbLua(const std::string& payload, bool& ok)
+{
+    if (!GEnv.ScriptEngine) { ok = false; return "script engine not ready"; }
+    lua_State* L = GEnv.ScriptEngine->lua();
+    const int base = lua_gettop(L);
+
+    // try as expression first ("return <payload>"), fall back to statement chunk
+    const std::string expr = "return " + payload;
+    int rc = luaL_loadstring(L, expr.c_str());
+    if (rc != 0)
+    {
+        lua_pop(L, 1);
+        rc = luaL_loadstring(L, payload.c_str());
+    }
+    if (rc != 0)
+    {
+        std::string err = lua_tostring(L, -1) ? lua_tostring(L, -1) : "load error";
+        lua_settop(L, base);
+        ok = false;
+        return err;
+    }
+
+    rc = lua_pcall(L, 0, LUA_MULTRET, 0);
+    if (rc != 0)
+    {
+        std::string err = lua_tostring(L, -1) ? lua_tostring(L, -1) : "runtime error";
+        lua_settop(L, base);
+        ok = false;
+        return err;
+    }
+
+    std::string out;
+    const int nresults = lua_gettop(L) - base;
+    for (int i = 1; i <= nresults; ++i)
+    {
+        if (i > 1)
+            out += "\t";
+        out += lua_value_to_string(L, base + i);
+    }
+    lua_settop(L, base);
+    return out;
+}
+
+// ---- key / mouse ----
+
+std::string CAgentBridge::VerbKey(const std::string& payload, bool& ok)
+{
+    char name[64]{}, action[16]{};
+    if (2 != sscanf(payload.c_str(), "%63s %15s", name, action))
+    {
+        ok = false;
+        return "usage: key <sdl_key_name> down|up|tap";
+    }
+
+    const SDL_Keycode kc = SDL_GetKeyFromName(name);
+    if (kc == SDLK_UNKNOWN) { ok = false; return std::string("unknown key: ") + name; }
+
+    if (0 == xr_strcmp(action, "down"))
+        push_key_event(kc, true);
+    else if (0 == xr_strcmp(action, "up"))
+        push_key_event(kc, false);
+    else if (0 == xr_strcmp(action, "tap"))
+    {
+        push_key_event(kc, true);
+        m_pendingKeyUps.push_back(u32(kc));
+    }
+    else { ok = false; return std::string("unknown action: ") + action; }
+    return "";
+}
+
+std::string CAgentBridge::VerbMouse(const std::string& payload, bool& ok)
+{
+    char sub[16]{};
+    if (1 != sscanf(payload.c_str(), "%15s", sub)) { ok = false; return "usage: mouse move|btn ..."; }
+
+    if (0 == xr_strcmp(sub, "move"))
+    {
+        int dx = 0, dy = 0;
+        if (2 != sscanf(payload.c_str(), "%*s %d %d", &dx, &dy))
+        {
+            ok = false;
+            return "usage: mouse move <dx> <dy>";
+        }
+        SDL_Event e{};
+        e.type = SDL_MOUSEMOTION;
+        e.motion.timestamp = SDL_GetTicks();
+        e.motion.windowID = SDL_GetWindowID(Device.m_sdlWnd);
+        e.motion.xrel = dx;
+        e.motion.yrel = dy;
+        SDL_PushEvent(&e);
+        return "";
+    }
+    if (0 == xr_strcmp(sub, "btn"))
+    {
+        char which[16]{}, action[16]{};
+        if (2 != sscanf(payload.c_str(), "%*s %15s %15s", which, action))
+        {
+            ok = false;
+            return "usage: mouse btn <left|right|middle> down|up|tap";
+        }
+        u8 b = SDL_BUTTON_LEFT;
+        if (0 == xr_strcmp(which, "right"))
+            b = SDL_BUTTON_RIGHT;
+        else if (0 == xr_strcmp(which, "middle"))
+            b = SDL_BUTTON_MIDDLE;
+        else if (0 != xr_strcmp(which, "left"))
+        {
+            ok = false;
+            return "unknown button";
+        }
+
+        if (0 == xr_strcmp(action, "down"))
+            push_btn_event(b, true);
+        else if (0 == xr_strcmp(action, "up"))
+            push_btn_event(b, false);
+        else if (0 == xr_strcmp(action, "tap"))
+        {
+            push_btn_event(b, true);
+            m_pendingBtnUps.push_back(b);
+        }
+        else { ok = false; return "unknown action"; }
+        return "";
+    }
+    ok = false;
+    return "usage: mouse move|btn ...";
+}
+
+// ---- state / shot ----
+
+std::string CAgentBridge::VerbState(bool& ok)
+{
+    string256 buf;
+    const float fps = Device.fTimeDelta > EPS ? 1.f / Device.fTimeDelta : 0.f;
+    xr_sprintf(buf, "scene=%s fps=%.0f frame=%u", g_pGameLevel ? "game" : "menu", fps, Device.dwFrame);
+    std::string out = buf;
+
+    if (g_pGameLevel && GEnv.ScriptEngine)
+    {
+        bool luaOk = true;
+        // one round-trip into Lua for the actor block; db.actor is nil while loading
+        const std::string actor = VerbLua(
+            "db and db.actor and string.format('level=%s pos=%.1f,%.1f,%.1f hp=%.2f time=%d', "
+            "level.name(), db.actor:position().x, db.actor:position().y, db.actor:position().z, "
+            "db.actor.health, game.time()) or 'actor=nil'",
+            luaOk);
+        out += " ";
+        out += luaOk ? actor : "actor=err";
+    }
+    return out;
+}
+
+std::string CAgentBridge::VerbShot(const std::string& payload, bool& ok)
+{
+    if (payload.empty()) { ok = false; return "usage: shot <name>"; }
+    if (!GEnv.Render)    { ok = false; return "renderer not ready"; }
+    GEnv.Render->Screenshot(IRender::SM_NORMAL, payload.c_str());
+    return payload;
+}
+
+#else // XR_PLATFORM_WINDOWS
+CAgentBridge* g_agent_bridge = nullptr;
+#endif
