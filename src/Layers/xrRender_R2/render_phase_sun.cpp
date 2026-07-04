@@ -44,6 +44,13 @@ void render_sun::init()
 
     o.mt_calc_enabled = RImplementation.o.mt_calculate;
     o.mt_draw_enabled = RImplementation.o.mt_render;
+#if defined(USE_METAL)
+    // Metal: draw calls funnel into a single render-command encoder owned by
+    // metalRenderPassManager — encoding is main-thread only.  render() must
+    // therefore run its cascade loop inline; calculate() (build_subspace, no
+    // encoder usage) may still run in parallel.
+    o.mt_draw_enabled = false;
+#endif
 }
 
 void render_sun::calculate()
@@ -86,7 +93,7 @@ void render_sun::calculate()
         view_dim / 2.f, view_dim / 2.f, 0.0f, 1.0f
     };
     Fmatrix m_viewport_inv;
-#if defined(USE_OGL)
+#if defined(USE_OGL) || defined(USE_METAL) // glm-based helper (r2_R_sun_support.h)
     XRMatrixInverse(&m_viewport_inv, nullptr, m_viewport);
 #else
     XMStoreFloat4x4((XMFLOAT4X4*)&m_viewport_inv,
@@ -143,7 +150,7 @@ void render_sun::calculate()
         }
 
         float map_size = m_sun_cascades[cascade_ind].size;
-#if defined(USE_OGL)
+#if defined(USE_OGL) || defined(USE_METAL) // glm-based helper (r2_R_sun_support.h)
         XRMatrixOrthoOffCenterLH(&mdir_Project, -map_size * 0.5f, map_size * 0.5f, -map_size * 0.5f,
                                    map_size * 0.5f, 0.1f, dist + /*sqrt(2)*/1.41421f * map_size);
 #else

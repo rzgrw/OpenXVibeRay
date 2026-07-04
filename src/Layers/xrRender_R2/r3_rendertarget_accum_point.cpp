@@ -156,6 +156,8 @@ void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
                 cmd_list.StateManager.SetSampleMask(0xffffffff);
 #elif defined(USE_OGL)
                 VERIFY(!"Only optimized MSAA is supported in OpenGL");
+#elif defined(USE_METAL)
+                VERIFY(!"Only optimized MSAA is supported on Metal");
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -210,6 +212,8 @@ void CRenderTarget::accum_point(CBackend& cmd_list, light* L)
                 cmd_list.StateManager.SetSampleMask(0xffffffff);
 #elif defined(USE_OGL)
                 VERIFY(!"Only optimized MSAA is supported in OpenGL");
+#elif defined(USE_METAL)
+                VERIFY(!"Only optimized MSAA is supported on Metal");
 #else
 #   error No graphics API selected or enabled!
 #endif

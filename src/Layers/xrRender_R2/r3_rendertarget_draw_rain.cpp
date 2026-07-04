@@ -73,6 +73,15 @@ void CRenderTarget::draw_rain(CBackend& cmd_list, light& RainSetup)
             0.0f, 0.0f, 0.5f * fRange, 0.0f,
             view_dimX / 2.f + view_sx + fTexelOffs, view_dimY / 2.f + view_sy + fTexelOffs, 0.5f + fBias, 1.0f
         };
+#elif defined(USE_METAL)
+        // Metal: top-left origin and [0..1] depth like D3D — DX-style matrix
+        Fmatrix m_TexelAdjust =
+        {
+            view_dimX / 2.f, 0.0f, 0.0f, 0.0f,
+            0.0f, -view_dimY / 2.f, 0.0f, 0.0f,
+            0.0f, 0.0f, fRange, 0.0f,
+            view_dimX / 2.f + view_sx + fTexelOffs, view_dimY / 2.f + view_sy + fTexelOffs, fBias, 1.0f
+        };
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -174,6 +183,15 @@ void CRenderTarget::draw_rain(CBackend& cmd_list, light& RainSetup)
         pv->set(-1, 3, d_Z, d_W, C, 0, 2, 0, 0);
         pv++;
         pv->set(3, -1, d_Z, d_W, C, 2, 0, 2*scale_X, 2*scale_X);
+        pv++;
+#elif defined(USE_METAL)
+        // Metal window space is top-left origin like D3D — mirror the DX11
+        // fullscreen-triangle UVs (verify visually in Task 20)
+        pv->set(-1, -1, d_Z, d_W, C, 0, 1, 0, scale_X);
+        pv++;
+        pv->set(-1, 3, d_Z, d_W, C, 0, -1, 0, -scale_X);
+        pv++;
+        pv->set(3, -1, d_Z, d_W, C, 2, 1, 2*scale_X, scale_X);
         pv++;
 #else
 #   error No graphics API selected or enabled!
@@ -292,6 +310,8 @@ void CRenderTarget::draw_rain(CBackend& cmd_list, light& RainSetup)
                 cmd_list.StateManager.SetSampleMask(0xffffffff);
 #elif defined(USE_OGL)
                 VERIFY(!"Only optimized MSAA is supported in OpenGL");
+#elif defined(USE_METAL)
+                VERIFY(!"Only optimized MSAA is supported on Metal");
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -349,6 +369,8 @@ void CRenderTarget::draw_rain(CBackend& cmd_list, light& RainSetup)
                 cmd_list.StateManager.SetSampleMask(0xffffffff);
 #elif defined(USE_OGL)
                 VERIFY(!"Only optimized MSAA is supported in OpenGL");
+#elif defined(USE_METAL)
+                VERIFY(!"Only optimized MSAA is supported on Metal");
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -396,6 +418,8 @@ void CRenderTarget::draw_rain(CBackend& cmd_list, light& RainSetup)
                 cmd_list.StateManager.SetSampleMask(0xffffffff);
 #elif defined(USE_OGL)
                 VERIFY(!"Only optimized MSAA is supported in OpenGL");
+#elif defined(USE_METAL)
+                VERIFY(!"Only optimized MSAA is supported on Metal");
 #else
 #   error No graphics API selected or enabled!
 #endif

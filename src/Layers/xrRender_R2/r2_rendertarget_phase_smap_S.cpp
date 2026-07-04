@@ -89,6 +89,17 @@ void CRenderTarget::phase_smap_spot_tsh(CBackend& cmd_list, light* L)
         pv++;
         pv->set(float(_w + EPS), float(_h + EPS), d_Z, d_W, C, p1.x, p1.y);
         pv++;
+#elif defined(USE_METAL)
+        // Metal window space is top-left origin like D3D — mirror the DX11
+        // vertex order (verify visually in Task 20)
+        pv->set(EPS, float(_h + EPS), d_Z, d_W, C, p0.x, p1.y);
+        pv++;
+        pv->set(EPS, EPS, d_Z, d_W, C, p0.x, p0.y);
+        pv++;
+        pv->set(float(_w + EPS), float(_h + EPS), d_Z, d_W, C, p1.x, p1.y);
+        pv++;
+        pv->set(float(_w + EPS), EPS, d_Z, d_W, C, p1.x, p0.y);
+        pv++;
 #else
 #   error No graphics API selected or enabled!
 #endif

@@ -11,9 +11,11 @@
 //    provide the constructor/destructor, geometry helpers and most phases;
 //  - metal_rendertarget_build_textures.cpp — material/noise textures;
 //  - metal_rendertarget_u_set_rt.cpp — the u_setrt overload family;
-//  - metal_rendertarget.cpp — temporary stubs for the phases that GL
-//    implements in gl_rendertarget_accum_direct.cpp and
-//    gl_rendertarget_phase_combine.cpp (plan Task 18).
+//  - metal_rendertarget_accum_direct.cpp — direct (sun) light accumulation;
+//  - metal_rendertarget_phase_combine.cpp — final combine + wallmarks;
+//  - metal_rendertarget_phase_flip.cpp — rt_Base -> drawable present copy
+//    (real on Metal, unlike GL's historical #if 0 version);
+//  - r2_R_sun.cpp — render_sun_old (old-style sun shadow maps).
 
 #include "Layers/xrRender/ColorMapManager.h"
 
@@ -183,7 +185,7 @@ public:
     ref_geom g_postprocess;
     ref_shader s_menu;
     ref_geom g_menu;
-#if 0 // kept for historical reasons
+#if 0 // kept for historical reasons (GL parity; the Metal present copy is a blit, no shader needed)
     ref_shader s_flip;
     ref_geom g_flip;
 #endif
@@ -293,9 +295,10 @@ public:
     void phase_combine();
     void phase_combine_volumetric();
     void phase_pp();
-#if 0 // kept for historical reasons
+    // Metal-specific (dead #if 0 code on GL): copies rt_Base into the frame's
+    // CAMetalDrawable.  Called from CHW::EndScene before the command buffer is
+    // committed — see metal_rendertarget_phase_flip.cpp.
     void phase_flip();
-#endif
 
     u32 get_width(CBackend& cmd_list)  { return dwWidth[cmd_list.context_id]; }
     u32 get_height(CBackend& cmd_list) { return dwHeight[cmd_list.context_id]; }

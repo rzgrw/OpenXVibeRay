@@ -49,6 +49,16 @@ void CRenderTarget::accum_reflected(CBackend& cmd_list, light* L)
             0.0f, 0.0f, 1.0f, 0.0f,
             0.5f + o_w, 0.5f + o_h, 0.0f, 1.0f
         };
+#elif defined(USE_METAL)
+        // Metal render targets are top-left origin like D3D — DX-style Y flip
+        // (matches u_compute_texgen_screen in r2_rendertarget.cpp)
+        Fmatrix m_TexelAdjust =
+        {
+            0.5f, 0.0f, 0.0f, 0.0f,
+            0.0f, -0.5f, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, 0.0f,
+            0.5f + o_w, 0.5f + o_h, 0.0f, 1.0f
+        };
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -113,6 +123,8 @@ void CRenderTarget::accum_reflected(CBackend& cmd_list, light* L)
                 cmd_list.StateManager.SetSampleMask(0xffffffff);
 #   elif defined(USE_OGL)
                 VERIFY(!"Only optimized MSAA is supported in OpenGL");
+#   elif defined(USE_METAL)
+                VERIFY(!"Only optimized MSAA is supported on Metal");
 #   endif // USE_DX11
             }
         }
@@ -155,6 +167,8 @@ void CRenderTarget::accum_reflected(CBackend& cmd_list, light* L)
                 cmd_list.StateManager.SetSampleMask(0xffffffff);
 #   elif defined(USE_OGL)
                 VERIFY(!"Only optimized MSAA is supported in OpenGL");
+#   elif defined(USE_METAL)
+                VERIFY(!"Only optimized MSAA is supported on Metal");
 #   endif // USE_DX11
             }
 #   if defined(USE_DX11) // XXX: not sure why this is needed. Just preserving original behaviour

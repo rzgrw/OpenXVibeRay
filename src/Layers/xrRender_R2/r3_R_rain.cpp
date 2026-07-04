@@ -10,7 +10,7 @@
 #include "DirectXMath.h"
 
 using namespace DirectX;
-#elif defined(USE_OGL)
+#elif defined(USE_OGL) || defined(USE_METAL) // glm-based helpers (r2_R_sun_support.h)
 namespace xray::render::RENDER_NAMESPACE
 {
 void XRMatrixOrthoOffCenterLH(Fmatrix* pout, float l, float r, float b, float t, float zn, float zf);
@@ -91,7 +91,7 @@ void render_rain::calculate()
 #if defined(USE_DX11)
         XMStoreFloat4x4(reinterpret_cast<XMFLOAT4X4*>(&ex_full_inverse),
             XMMatrixInverse(nullptr, XMLoadFloat4x4(reinterpret_cast<XMFLOAT4X4*>(&ex_full))));
-#elif defined(USE_OGL)
+#elif defined(USE_OGL) || defined(USE_METAL)
         XRMatrixInverse(&ex_full_inverse, nullptr, ex_full);
 #else
 #   error No graphics API selected or enabled!
@@ -209,7 +209,7 @@ void render_rain::calculate()
                 bb.vMin.z + 2 * tweak_rain_ortho_xform_initial_offs
             )
         );
-#elif defined(USE_OGL)
+#elif defined(USE_OGL) || defined(USE_METAL)
         XRMatrixOrthoOffCenterLH(&mdir_Project,
             bb.vMin.x, bb.vMax.x, bb.vMin.y, bb.vMax.y,
             bb.vMin.z - tweak_rain_ortho_xform_initial_offs,
@@ -242,6 +242,18 @@ void render_rain::calculate()
         {
             view_dim / 2.f, 0.0f, 0.0f, 0.0f,
             0.0f, view_dim / 2.f, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, 0.0f,
+            view_dim / 2.f + fTexelOffs, view_dim / 2.f + fTexelOffs, 0.0f, 1.0f
+        };
+        Fmatrix m_viewport_inv;
+        XRMatrixInverse(&m_viewport_inv, nullptr, m_viewport);
+#elif defined(USE_METAL)
+        // Metal render targets are top-left origin like D3D — DX-style Y flip
+        // (see Task 17 texgen precedent in r2_rendertarget.cpp), glm inverse.
+        Fmatrix m_viewport =
+        {
+            view_dim / 2.f, 0.0f, 0.0f, 0.0f,
+            0.0f, -view_dim / 2.f, 0.0f, 0.0f,
             0.0f, 0.0f, 1.0f, 0.0f,
             view_dim / 2.f + fTexelOffs, view_dim / 2.f + fTexelOffs, 0.0f, 1.0f
         };

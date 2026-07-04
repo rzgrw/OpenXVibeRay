@@ -228,6 +228,14 @@ void CHW::EndScene()
     // buffer must not be committed while an encoder is recording.
     RPManager.OnFrameEnd();
 
+    // rt_Base is a plain offscreen texture (metalSH_RT has no swapchain
+    // wiring): copy the final frame into the CAMetalDrawable before the
+    // command buffer is committed.  The GL backend does the equivalent in
+    // CHW::Present via glBlitFramebuffer — see
+    // metal_rendertarget_phase_flip.cpp.
+    if (RImplementation.Target)
+        RImplementation.Target->phase_flip();
+
     pCurrentCommandBuffer->commit();
     pCurrentCommandBuffer->release();
     pCurrentCommandBuffer = nullptr;
@@ -235,6 +243,8 @@ void CHW::EndScene()
 
 void CHW::Present()
 {
+    // The frame image was already copied into the drawable by
+    // CRenderTarget::phase_flip() (called from EndScene) — just present.
     if (pCurrentDrawable)
     {
         pCurrentDrawable->present();
