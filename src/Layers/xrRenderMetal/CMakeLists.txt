@@ -11,6 +11,7 @@
 #   metalConstantBuffer.cpp
 #   metalHW.cpp
 #   metalr_constants.cpp
+#   metalShaderCompiler.cpp
 #   metalState.cpp
 #   metalStateUtils.cpp
 #   metalVertexInput.cpp
