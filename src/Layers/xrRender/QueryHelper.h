@@ -1,5 +1,10 @@
 #pragma once
 
+#if defined(USE_METAL)
+#include "Layers/xrRenderMetal/metalOcclusionQuery.h"
+#include "Layers/xrRenderMetal/metalRenderPassManager.h"
+#endif
+
 namespace xray::render::RENDER_NAMESPACE
 {
 //	Interface
@@ -99,21 +104,66 @@ IC HRESULT ReleaseQuery(GLuint query)
 
 #elif defined(USE_METAL)
 
-IC HRESULT CreateQuery(uint64_t* pQuery, D3D_QUERY /*type*/)
+// Queries are slots in the shared MTLVisibilityResultBuffer owned by
+// metalOcclusionQuery (see Layers/xrRenderMetal/metalOcclusionQuery.h).
+// Handle encoding: slot index + 1; 0 means "invalid handle".
+
+// Visibility buffer slot count (u64 each). Must cover R_occlusion's demand
+// (occq_size in r__occlusion.h); allocation fails gracefully past the limit.
+constexpr u32 metal_occq_pool_size = 4096;
+
+IC HRESULT CreateQuery(uint64_t* pQuery, D3D_QUERY type)
 {
-    *pQuery = 0; // Metal query placeholder
+    R_ASSERT(type == D3D_QUERY_OCCLUSION);
+    if (!OcclusionQueries.Created())
+        OcclusionQueries.Create(metal_occq_pool_size);
+    const u32 index = OcclusionQueries.Allocate();
+    if (index == metalOcclusionQuery::InvalidIndex)
+    {
+        *pQuery = 0;
+        return E_FAIL;
+    }
+    *pQuery = uint64_t(index) + 1;
     return S_OK;
 }
 
-IC HRESULT GetData(uint64_t /*query*/, void* pData, u32 DataSize)
+IC HRESULT GetData(uint64_t query, void* pData, u32 DataSize)
 {
-    ZeroMemory(pData, DataSize);
+    if (!query)
+    {
+        ZeroMemory(pData, DataSize);
+        return S_OK;
+    }
+    const u64 result = OcclusionQueries.GetResult(u32(query - 1));
+    if (DataSize >= sizeof(u64))
+        *static_cast<u64*>(pData) = result;
+    else
+        *static_cast<u32*>(pData) = result > u64(type_max<u32>) ? type_max<u32> : u32(result);
     return S_OK;
 }
 
-IC HRESULT BeginQuery(uint64_t /*query*/) { return S_OK; }
-IC HRESULT EndQuery(uint64_t /*query*/) { return S_OK; }
-IC HRESULT ReleaseQuery(uint64_t /*query*/) { return S_OK; }
+IC HRESULT BeginQuery(uint64_t query)
+{
+    if (!query)
+        return E_FAIL;
+    OcclusionQueries.Begin(u32(query - 1), RPManager.CurrentEncoder());
+    return S_OK;
+}
+
+IC HRESULT EndQuery(uint64_t query)
+{
+    if (!query)
+        return E_FAIL;
+    OcclusionQueries.End(u32(query - 1), RPManager.CurrentEncoder());
+    return S_OK;
+}
+
+IC HRESULT ReleaseQuery(uint64_t query)
+{
+    if (query)
+        OcclusionQueries.Release(u32(query - 1));
+    return S_OK;
+}
 
 #else
 #   error No graphics API selected or enabled!
