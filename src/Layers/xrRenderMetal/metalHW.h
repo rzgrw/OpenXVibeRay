@@ -67,10 +67,15 @@ public:
     CA::MetalLayer*        pMetalLayer    = nullptr;  // backed by SDL_Metal_CreateView
     MTL::CommandBuffer*    pCurrentCommandBuffer = nullptr;
     CA::MetalDrawable*     pCurrentDrawable      = nullptr;
+    // Render command encoder for the currently open render pass.
+    // Owned/managed by the render-pass code (CBackend); consumers
+    // (e.g. CTexture::apply_*) must tolerate nullptr.
+    MTL::RenderCommandEncoder* pCurrentRenderEncoder = nullptr;
 #else
     void* pDevice        = nullptr;
     void* pCommandQueue  = nullptr;
     void* pMetalLayer    = nullptr;
+    void* pCurrentRenderEncoder = nullptr;
 #endif
 
     // SDL_MetalView handle (NSView* on macOS) — retained so we can destroy it

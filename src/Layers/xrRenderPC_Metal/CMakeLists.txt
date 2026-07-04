@@ -352,12 +352,12 @@ target_sources(xrRender_Metal PRIVATE
     #../xrRenderMetal/metalResourceManager_Resources.cpp # TODO Task 12
     #../xrRenderMetal/metalResourceManager_Scripting.cpp # TODO Task 12
     #../xrRenderMetal/metalSH_RT.cpp                  # TODO Task 11
-    #../xrRenderMetal/metalSH_Texture.cpp             # TODO Task 11
+    ../xrRenderMetal/metalSH_Texture.cpp
     ../xrRenderMetal/metalStateUtils.cpp
     ../xrRenderMetal/metalStateUtils.h
-    #../xrRenderMetal/metalTexture.cpp                 # TODO Task 11
-    #../xrRenderMetal/metalTextureUtils.cpp            # TODO Task 11
-    #../xrRenderMetal/metalTextureUtils.h              # TODO Task 11
+    ../xrRenderMetal/metalTexture.cpp
+    ../xrRenderMetal/metalTextureUtils.cpp
+    ../xrRenderMetal/metalTextureUtils.h
     ../../Include/xrRender/animation_blend.h
     ../../Include/xrRender/animation_motion.h
     ../../Include/xrRender/DebugRender.h
