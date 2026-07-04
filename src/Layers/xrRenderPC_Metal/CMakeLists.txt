@@ -8,9 +8,9 @@ target_sources(xrRender_Metal PRIVATE
     dxImGuiRender.cpp           # Metal ImGui backend (replaces ../xrRender/dxImGuiRender.cpp)
     metal_rendertarget.cpp
     metal_rendertarget.h
+    metal_shaders.cpp
     r2_test_hw.cpp
     # r2_R_sun.cpp              # TODO Task 17: Metal sun render pass
-    # rgl_shaders.cpp           # TODO: Metal shader loader (was rgl_shaders.cpp in GL)
     stdafx.cpp
     stdafx.h
     xrRender_Metal.cpp
@@ -357,6 +357,8 @@ target_sources(xrRender_Metal PRIVATE
     ../xrRenderMetal/metalResourceManager_Scripting.cpp
     ../xrRenderMetal/metalSH_RT.cpp
     ../xrRenderMetal/metalSH_Texture.cpp
+    ../xrRenderMetal/metalShaderCompiler.cpp
+    ../xrRenderMetal/metalShaderCompiler.h
     ../xrRenderMetal/metalState.cpp
     ../xrRenderMetal/metalState.h
     ../xrRenderMetal/metalStateUtils.cpp
@@ -407,6 +409,8 @@ target_include_directories(xrRender_Metal
     "${CMAKE_SOURCE_DIR}/Externals/gli"
     "${CMAKE_SOURCE_DIR}/Externals/gli/external"
     "${CMAKE_SOURCE_DIR}/Externals/metal-cpp"
+    "${CMAKE_SOURCE_DIR}/Externals/SPIRV-Cross"
+    "${CMAKE_SOURCE_DIR}/Externals/glslang"
 )
 
 target_link_libraries(xrRender_Metal
@@ -419,6 +423,12 @@ target_link_libraries(xrRender_Metal
     xrParticles
     xrScriptEngine
     xrImGui
+    # Shader cross-compilation toolchain (GLSL -> SPIR-V -> MSL), see Task 15/16
+    glslang
+    glslang-default-resource-limits
+    SPIRV
+    spirv-cross-core
+    spirv-cross-msl
     "-framework Metal"
     "-framework QuartzCore"
     "-framework Foundation"

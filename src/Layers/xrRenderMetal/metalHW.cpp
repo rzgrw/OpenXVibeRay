@@ -109,6 +109,12 @@ void CHW::CreateDevice(SDL_Window* sdlWnd)
     Caps.fTarget = D3DFMT_A8R8G8B8;
     Caps.fDepth  = D3DFMT_D24S8;
 
+    // Shader profiles: ShaderTypeTraits hands these to CRender::shader_compile
+    // as pTarget, which dispatches on the first character ('v'/'p') — same
+    // convention as the GL backend (glHWCaps.cpp).
+    Caps.geometry_profile = "vs_4_0";
+    Caps.raster_profile = "ps_4_0";
+
     BackBufferCount = 1;
 
     RPManager.OnDeviceCreate();

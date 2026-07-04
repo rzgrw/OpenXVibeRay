@@ -16,6 +16,7 @@
 #   metalRenderPassManager.cpp
 #   metalr_constants.cpp
 #   metalr_screenshot.cpp
+#   metalShaderCompiler.cpp
 #   metalState.cpp
 #   metalStateUtils.cpp
 #   metalVertexInput.cpp
