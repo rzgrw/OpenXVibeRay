@@ -5,6 +5,7 @@ if (APPLE)
 add_library(xrRender_Metal EXCLUDE_FROM_ALL)
 
 target_sources(xrRender_Metal PRIVATE
+    dxImGuiRender.cpp           # Metal ImGui backend (replaces ../xrRender/dxImGuiRender.cpp)
     metal_rendertarget.cpp
     metal_rendertarget.h
     r2_test_hw.cpp
@@ -55,7 +56,7 @@ target_sources(xrRender_Metal PRIVATE
     ../xrRender/dxEnvironmentRender.h
     ../xrRender/dxFontRender.cpp
     ../xrRender/dxFontRender.h
-    ../xrRender/dxImGuiRender.cpp
+    # ../xrRender/dxImGuiRender.cpp — replaced by the local Metal dxImGuiRender.cpp
     ../xrRender/dxImGuiRender.h
     ../xrRender/dxLensFlareRender.cpp
     ../xrRender/dxLensFlareRender.h
@@ -294,10 +295,10 @@ target_sources(xrRender_Metal PRIVATE
     ../xrRender/blenders/dx11RainBlender.h
     #../xrRender/blenders/dx11HDAOCSBlender.cpp
     #../xrRender/blenders/dx11HDAOCSBlender.h
-    # Metal equivalents for the GL-specific blenders (TODO: implement in Task 16)
-    #../xrRender/blenders/glMinMaxSMBlender.cpp
-    #../xrRender/blenders/glMSAABlender.cpp
-    #../xrRender/blenders/glRainBlender.cpp
+    # Metal equivalents of the GL-specific blenders (API-agnostic copies)
+    ../xrRender/blenders/metalMinMaxSMBlender.cpp
+    ../xrRender/blenders/metalMSAABlender.cpp
+    ../xrRender/blenders/metalRainBlender.cpp
     ../xrRender/blenders/uber_deffer.cpp
     ../xrRender/blenders/uber_deffer.h
     ../xrRender_R2/r2.cpp
@@ -335,26 +336,29 @@ target_sources(xrRender_Metal PRIVATE
     ../xrRender_R2/render_phase_sun.cpp
     ../xrRender_R2/SMAP_Allocator.h
     # xrRenderMetal hardware abstraction layer sources
+    ../xrRenderMetal/Blender_Recorder_Metal.cpp
     ../xrRenderMetal/CommonTypes.h
     ../xrRenderMetal/metalBufferUtils.cpp
     ../xrRenderMetal/metalConstantBuffer.cpp
     ../xrRenderMetal/metalConstantBuffer.h
+    ../xrRenderMetal/metalDetailManager_VS.cpp
     ../xrRenderMetal/metalHW.cpp
     ../xrRenderMetal/metalHW.h
+    ../xrRenderMetal/metalOcclusionQuery.cpp
+    ../xrRenderMetal/metalOcclusionQuery.h
     ../xrRenderMetal/metalR_Backend_Runtime.h
+    ../xrRenderMetal/metalRenderPassManager.cpp
+    ../xrRenderMetal/metalRenderPassManager.h
     ../xrRenderMetal/metalr_constants.cpp
     ../xrRenderMetal/metalr_constants_cache.h
-    ../xrRenderMetal/metalState.cpp
-    ../xrRenderMetal/metalState.h
-    # GL-specific sources without Metal equivalents yet — commented out until Tasks 13-16
-    #../xrRenderMetal/Blender_Recorder_Metal.cpp       # TODO Task 13
-    #../xrRenderMetal/metalDetailManager_VS.cpp        # TODO Task 16
+    ../xrRenderMetal/metalr_screenshot.cpp
     ../xrRenderMetal/metalHWCaps.cpp
-    #../xrRenderMetal/metalr_screenshot.cpp            # TODO Task 19
     ../xrRenderMetal/metalResourceManager_Resources.cpp
     ../xrRenderMetal/metalResourceManager_Scripting.cpp
     ../xrRenderMetal/metalSH_RT.cpp
     ../xrRenderMetal/metalSH_Texture.cpp
+    ../xrRenderMetal/metalState.cpp
+    ../xrRenderMetal/metalState.h
     ../xrRenderMetal/metalStateUtils.cpp
     ../xrRenderMetal/metalStateUtils.h
     ../xrRenderMetal/metalTexture.cpp
