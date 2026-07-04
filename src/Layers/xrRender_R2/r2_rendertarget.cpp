@@ -62,6 +62,12 @@ void CRenderTarget::u_stencil_optimize(CBackend& cmd_list, eStencilOptimizeMode 
     VERIFY(RImplementation.o.nvstencil);
     VERIFY(!"CRenderTarget::u_stencil_optimize no implemented");
     UNUSED(eSOM);
+#elif defined(USE_METAL)
+    //	TODO Task 20: Metal has the required stencil functionality, but this
+    //	path is unreachable until o.nvstencil is ever set for Metal.
+    VERIFY(RImplementation.o.nvstencil);
+    VERIFY(!"CRenderTarget::u_stencil_optimize no implemented");
+    UNUSED(eSOM);
 #else
 #   error No graphics API selected or enabled!
 #endif // USE_DX11
@@ -86,6 +92,15 @@ void CRenderTarget::u_compute_texgen_screen(CBackend& cmd_list, Fmatrix& m_Texge
         0.0f, 0.0f, 1.0f, 0.0f,
         0.5f, 0.5f, 0.0f, 1.0f
     };
+#elif defined(USE_METAL)
+    // Metal render targets are top-left origin like D3D — flip Y like DX11.
+    Fmatrix m_TexelAdjust =
+    {
+        0.5f, 0.0f, 0.0f, 0.0f,
+        0.0f, -0.5f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.5f, 0.5f, 0.0f, 1.0f
+    };
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -104,6 +119,8 @@ void CRenderTarget::u_compute_texgen_jitter(CBackend& cmd_list, Fmatrix& m_Texge
         0.0f, -0.5f, 0.0f, 0.0f,
 #elif defined(USE_OGL)
         0.0f, 0.5f, 0.0f, 0.0f,
+#elif defined(USE_METAL)
+        0.0f, -0.5f, 0.0f, 0.0f, // top-left origin like D3D
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -727,6 +744,31 @@ CRenderTarget::~CRenderTarget()
 
     t_noise_mipped->surface_set(GL_TEXTURE_2D, 0);
     glDeleteTextures(1, &t_noise_surf_mipped);
+#elif defined(USE_METAL)
+    // Textures (created in build_textures) — detach from the CTexture
+    // wrappers before releasing so CTexture::Unload doesn't release a
+    // surface it doesn't own (same pattern as CRT::destroy).
+    t_material->surface_set(0);
+    reinterpret_cast<MTL::Texture*>(t_material_surf)->release();
+    t_material_surf = 0;
+    t_material.destroy();
+
+    t_LUM_src->surface_set(0);
+    t_LUM_dest->surface_set(0);
+    t_LUM_src.destroy();
+    t_LUM_dest.destroy();
+
+    // Jitter
+    for (u32 it = 0; it < TEX_jitter_count; it++)
+    {
+        t_noise[it]->surface_set(0);
+        reinterpret_cast<MTL::Texture*>(t_noise_surf[it])->release();
+        t_noise_surf[it] = 0;
+    }
+
+    t_noise_mipped->surface_set(0);
+    reinterpret_cast<MTL::Texture*>(t_noise_surf_mipped)->release();
+    t_noise_surf_mipped = 0;
 #else
 #   error No graphics API selected or enabled!
 #endif

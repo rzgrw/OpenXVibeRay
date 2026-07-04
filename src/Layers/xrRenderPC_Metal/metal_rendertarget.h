@@ -1,10 +1,19 @@
 #pragma once
 
-// metal_rendertarget.h — stub CRenderTarget for the Metal backend.
+// metal_rendertarget.h — CRenderTarget for the Metal backend.
 //
-// This file mirrors the interface of gl_rendertarget.h but replaces all
-// GL/D3D-specific types with Metal-compatible placeholders.
-// Method bodies are empty stubs; full implementation will be added in Task 17.
+// Mirrors gl_rendertarget.h member-for-member.  GL object ids (GLuint) become
+// uint64_t opaque handles (MTL::Texture* encoded via reinterpret_cast, the
+// shared-code handle contract — see metalR_Backend_Runtime.h and SH_RT.h).
+//
+// The implementation is split exactly like the GL backend:
+//  - shared xrRender_R2 sources (r2_rendertarget*.cpp, r3_rendertarget*.cpp)
+//    provide the constructor/destructor, geometry helpers and most phases;
+//  - metal_rendertarget_build_textures.cpp — material/noise textures;
+//  - metal_rendertarget_u_set_rt.cpp — the u_setrt overload family;
+//  - metal_rendertarget.cpp — temporary stubs for the phases that GL
+//    implements in gl_rendertarget_accum_direct.cpp and
+//    gl_rendertarget_phase_combine.cpp (plan Task 18).
 
 #include "Layers/xrRender/ColorMapManager.h"
 
@@ -79,13 +88,13 @@ public:
     ref_rt rt_smap_rain;
     ref_rt rt_smap_depth_minmax;
 
-    // Textures (void* placeholders — will become MTL::Texture* in Task 17)
-    void* t_material_surf{};
+    // Textures (uint64_t-encoded MTL::Texture*, owned by CRenderTarget)
+    uint64_t t_material_surf{};
     ref_texture t_material;
 
-    void* t_noise_surf[TEX_jitter_count]{};
+    uint64_t t_noise_surf[TEX_jitter_count]{};
     ref_texture t_noise[TEX_jitter_count];
-    void* t_noise_surf_mipped{};
+    uint64_t t_noise_surf_mipped{};
     ref_texture t_noise_mipped;
 
     ref_texture t_base;
@@ -174,7 +183,10 @@ public:
     ref_geom g_postprocess;
     ref_shader s_menu;
     ref_geom g_menu;
-
+#if 0 // kept for historical reasons
+    ref_shader s_flip;
+    ref_geom g_flip;
+#endif
 private:
     float im_noise_time;
     u32   im_noise_shift_w;
@@ -212,9 +224,16 @@ public:
     void accum_volumetric_geom_create();
     void accum_volumetric_geom_destroy();
 
+    uint64_t get_base_rt() { return rt_Base[HW.CurrentBackBuffer]->pRT; }
+    uint64_t get_base_zb() { return rt_Base_Depth->pZRT; }
+
     void u_setrt(CBackend& cmd_list, const ref_rt& _1, const ref_rt& _2, const ref_rt& _3, const ref_rt& _zb);
     void u_setrt(CBackend& cmd_list, const ref_rt& _1, const ref_rt& _2, const ref_rt& _zb);
-    void u_setrt(CBackend& cmd_list, u32 W, u32 H, void* _1, void* _2, void* _3, void* zb);
+    void u_setrt(CBackend& cmd_list, u32 W, u32 H, uint64_t _1, uint64_t _2, uint64_t _3, uint64_t zb);
+    void u_setrt(CBackend& cmd_list, u32 W, u32 H, uint64_t _1, uint64_t _2, uint64_t _3, const ref_rt& _zb)
+    {
+        u_setrt(cmd_list, W, H, _1, _2, _3, _zb ? _zb->pZRT : 0);
+    }
 
     void u_stencil_optimize(CBackend& cmd_list, eStencilOptimizeMode eSOM = SO_Light);
     void u_compute_texgen_screen(CBackend& cmd_list, Fmatrix& dest);
@@ -274,6 +293,9 @@ public:
     void phase_combine();
     void phase_combine_volumetric();
     void phase_pp();
+#if 0 // kept for historical reasons
+    void phase_flip();
+#endif
 
     u32 get_width(CBackend& cmd_list)  { return dwWidth[cmd_list.context_id]; }
     u32 get_height(CBackend& cmd_list) { return dwHeight[cmd_list.context_id]; }

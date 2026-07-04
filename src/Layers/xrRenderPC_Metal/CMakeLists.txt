@@ -8,9 +8,14 @@ target_sources(xrRender_Metal PRIVATE
     dxImGuiRender.cpp           # Metal ImGui backend (replaces ../xrRender/dxImGuiRender.cpp)
     metal_rendertarget.cpp
     metal_rendertarget.h
+    metal_rendertarget_build_textures.cpp
+    metal_rendertarget_u_set_rt.cpp
+    # metal_rendertarget_accum_direct.cpp   # TODO Task 18: sun/direct light accumulation
+    # metal_rendertarget_phase_combine.cpp  # TODO Task 18: final combine + wallmarks
+    # metal_rendertarget_phase_flip.cpp     # TODO Task 18: present to Metal drawable
     metal_shaders.cpp
     r2_test_hw.cpp
-    # r2_R_sun.cpp              # TODO Task 17: Metal sun render pass
+    # r2_R_sun.cpp              # TODO Task 18: Metal sun render pass
     stdafx.cpp
     stdafx.h
     xrRender_Metal.cpp
