@@ -349,19 +349,19 @@ target_sources(xrRender_Metal PRIVATE
     # GL-specific sources without Metal equivalents yet — commented out until Tasks 13-16
     #../xrRenderMetal/Blender_Recorder_Metal.cpp       # TODO Task 13
     #../xrRenderMetal/metalDetailManager_VS.cpp        # TODO Task 16
-    #../xrRenderMetal/metalHWCaps.cpp                  # TODO Task 14
-    #../xrRenderMetal/metalr_screenshot.cpp            # TODO Task 15
-    #../xrRenderMetal/metalResourceManager_Resources.cpp # TODO Task 14
-    #../xrRenderMetal/metalResourceManager_Scripting.cpp # TODO Task 14
-    #../xrRenderMetal/metalSH_RT.cpp                  # TODO Task 14
-    #../xrRenderMetal/metalSH_Texture.cpp             # TODO Task 13
+    ../xrRenderMetal/metalHWCaps.cpp
+    #../xrRenderMetal/metalr_screenshot.cpp            # TODO Task 19
+    ../xrRenderMetal/metalResourceManager_Resources.cpp
+    ../xrRenderMetal/metalResourceManager_Scripting.cpp
+    ../xrRenderMetal/metalSH_RT.cpp
+    ../xrRenderMetal/metalSH_Texture.cpp
     ../xrRenderMetal/metalStateUtils.cpp
     ../xrRenderMetal/metalStateUtils.h
+    ../xrRenderMetal/metalTexture.cpp
+    ../xrRenderMetal/metalTextureUtils.cpp
+    ../xrRenderMetal/metalTextureUtils.h
     ../xrRenderMetal/metalVertexInput.cpp
     ../xrRenderMetal/metalVertexInput.h
-    #../xrRenderMetal/metalTexture.cpp                 # TODO Task 11
-    #../xrRenderMetal/metalTextureUtils.cpp            # TODO Task 11
-    #../xrRenderMetal/metalTextureUtils.h              # TODO Task 11
     ../../Include/xrRender/animation_blend.h
     ../../Include/xrRender/animation_motion.h
     ../../Include/xrRender/DebugRender.h
@@ -403,6 +403,8 @@ target_include_directories(xrRender_Metal
     "${CMAKE_SOURCE_DIR}/Externals/gli"
     "${CMAKE_SOURCE_DIR}/Externals/gli/external"
     "${CMAKE_SOURCE_DIR}/Externals/metal-cpp"
+    "${CMAKE_SOURCE_DIR}/Externals/SPIRV-Cross"
+    "${CMAKE_SOURCE_DIR}/Externals/glslang"
 )
 
 target_link_libraries(xrRender_Metal
@@ -415,6 +417,12 @@ target_link_libraries(xrRender_Metal
     xrParticles
     xrScriptEngine
     xrImGui
+    # Shader cross-compilation toolchain (GLSL -> SPIR-V -> MSL), see Task 15/16
+    glslang
+    glslang-default-resource-limits
+    SPIRV
+    spirv-cross-core
+    spirv-cross-msl
     "-framework Metal"
     "-framework QuartzCore"
     "-framework Foundation"
