@@ -189,6 +189,12 @@ public:
     typedef std::pair<u32, ref_cbuffer> cb_table_record;
     typedef xr_vector<cb_table_record> cb_table;
     cb_table m_CBTable[R__NUM_CONTEXTS];
+#elif defined(USE_METAL)
+    // Byte size of the packed per-stage uniform block, gathered from shader
+    // reflection by parse() (see metalr_constants.cpp).  Consumed by
+    // R_constants::set_table to size the per-draw constant uploads.
+    u32 mtl_vs_block_size{};
+    u32 mtl_ps_block_size{};
 #endif
 
 private:

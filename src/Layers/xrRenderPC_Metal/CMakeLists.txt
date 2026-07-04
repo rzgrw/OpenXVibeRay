@@ -336,28 +336,32 @@ target_sources(xrRender_Metal PRIVATE
     ../xrRender_R2/SMAP_Allocator.h
     # xrRenderMetal hardware abstraction layer sources
     ../xrRenderMetal/CommonTypes.h
+    ../xrRenderMetal/metalBufferUtils.cpp
+    ../xrRenderMetal/metalConstantBuffer.cpp
+    ../xrRenderMetal/metalConstantBuffer.h
     ../xrRenderMetal/metalHW.cpp
     ../xrRenderMetal/metalHW.h
     ../xrRenderMetal/metalR_Backend_Runtime.h
+    ../xrRenderMetal/metalr_constants.cpp
     ../xrRenderMetal/metalr_constants_cache.h
     ../xrRenderMetal/metalState.cpp
     ../xrRenderMetal/metalState.h
-    # GL-specific sources without Metal equivalents yet — commented out until Tasks 8-16
+    # GL-specific sources without Metal equivalents yet — commented out until Tasks 13-16
     #../xrRenderMetal/Blender_Recorder_Metal.cpp       # TODO Task 13
-    #../xrRenderMetal/metalBufferUtils.cpp             # TODO Task 8
     #../xrRenderMetal/metalDetailManager_VS.cpp        # TODO Task 16
-    #../xrRenderMetal/metalHWCaps.cpp                  # TODO Task 9
-    #../xrRenderMetal/metalr_constants.cpp             # TODO Task 10
-    #../xrRenderMetal/metalr_screenshot.cpp            # TODO Task 15
-    #../xrRenderMetal/metalResourceManager_Resources.cpp # TODO Task 12
-    #../xrRenderMetal/metalResourceManager_Scripting.cpp # TODO Task 12
-    #../xrRenderMetal/metalSH_RT.cpp                  # TODO Task 11
-    #../xrRenderMetal/metalSH_Texture.cpp             # TODO Task 11
+    ../xrRenderMetal/metalHWCaps.cpp
+    #../xrRenderMetal/metalr_screenshot.cpp            # TODO Task 19
+    ../xrRenderMetal/metalResourceManager_Resources.cpp
+    ../xrRenderMetal/metalResourceManager_Scripting.cpp
+    ../xrRenderMetal/metalSH_RT.cpp
+    ../xrRenderMetal/metalSH_Texture.cpp
     ../xrRenderMetal/metalStateUtils.cpp
     ../xrRenderMetal/metalStateUtils.h
-    #../xrRenderMetal/metalTexture.cpp                 # TODO Task 11
-    #../xrRenderMetal/metalTextureUtils.cpp            # TODO Task 11
-    #../xrRenderMetal/metalTextureUtils.h              # TODO Task 11
+    ../xrRenderMetal/metalTexture.cpp
+    ../xrRenderMetal/metalTextureUtils.cpp
+    ../xrRenderMetal/metalTextureUtils.h
+    ../xrRenderMetal/metalVertexInput.cpp
+    ../xrRenderMetal/metalVertexInput.h
     ../../Include/xrRender/animation_blend.h
     ../../Include/xrRender/animation_motion.h
     ../../Include/xrRender/DebugRender.h
