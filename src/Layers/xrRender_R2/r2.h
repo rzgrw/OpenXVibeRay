@@ -402,6 +402,11 @@ public:
     BackendAPI GetBackendAPI() const override { return IRender::BackendAPI::OpenGL; }
     u32 get_dx_level() override { return /*HW.pDevice1?0x000A0001:*/0x000A0000; }
     pcstr getShaderPath() override { return "gl\\"; }
+#elif defined(USE_METAL)
+    BackendAPI GetBackendAPI() const override { return IRender::BackendAPI::Metal; }
+    u32 get_dx_level() override { return 0x000A0000; }
+    // Metal cross-compiles the GL GLSL shader set (see metal_shaders.cpp)
+    pcstr getShaderPath() override { return "gl\\"; }
 #else
 #   error No graphics API selected or enabled!
 #endif
@@ -518,6 +523,8 @@ private:
 #if defined(USE_DX11)
     xr_vector<D3D_SHADER_MACRO> m_ShaderOptions;
 #elif defined(USE_OGL)
+    xr_string m_ShaderOptions;
+#elif defined(USE_METAL)
     xr_string m_ShaderOptions;
 #else
 #   error No graphics API selected or enabled!

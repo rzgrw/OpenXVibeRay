@@ -142,7 +142,8 @@ public:
         D3D9,
         D3D10,
         D3D11,
-        OpenGL
+        OpenGL,
+        Metal
     };
 
     enum ScreenshotMode : u32

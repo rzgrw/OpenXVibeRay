@@ -7,10 +7,16 @@
 #
 # This file exists as documentation and a placeholder.
 # Sources to include in xrRenderPC_Metal:
+#   Blender_Recorder_Metal.cpp
 #   metalBufferUtils.cpp
 #   metalConstantBuffer.cpp
+#   metalDetailManager_VS.cpp
 #   metalHW.cpp
+#   metalOcclusionQuery.cpp
+#   metalRenderPassManager.cpp
 #   metalr_constants.cpp
+#   metalr_screenshot.cpp
+#   metalShaderCompiler.cpp
 #   metalState.cpp
 #   metalStateUtils.cpp
 #   metalVertexInput.cpp

@@ -10,6 +10,8 @@
 #pragma hdrstop
 
 #include "metalHW.h"
+#include "metalRenderPassManager.h"
+#include "metalOcclusionQuery.h"
 #include "xrEngine/XR_IOConsole.h"
 
 #include <SDL_metal.h>
@@ -99,16 +101,31 @@ void CHW::CreateDevice(SDL_Window* sdlWnd)
     // Configure the layer
     pMetalLayer->setDevice(pDevice);
     pMetalLayer->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
-    pMetalLayer->setFramebufferOnly(true);
+    // framebufferOnly forbids using the drawable as a blit source, which the
+    // screenshot readback (metalr_screenshot.cpp) requires.  The bandwidth
+    // cost of the non-framebufferOnly path is negligible on Apple Silicon.
+    pMetalLayer->setFramebufferOnly(false);
 
     Caps.fTarget = D3DFMT_A8R8G8B8;
     Caps.fDepth  = D3DFMT_D24S8;
 
+    // Shader profiles: ShaderTypeTraits hands these to CRender::shader_compile
+    // as pTarget, which dispatches on the first character ('v'/'p') — same
+    // convention as the GL backend (glHWCaps.cpp).
+    Caps.geometry_profile = "vs_4_0";
+    Caps.raster_profile = "ps_4_0";
+
     BackBufferCount = 1;
+
+    RPManager.OnDeviceCreate();
 }
 
 void CHW::DestroyDevice()
 {
+    // Tear down pass/PSO/occlusion state while the device is still alive
+    OcclusionQueries.Destroy();
+    RPManager.OnDeviceDestroy();
+
     // Discard any in-flight frame
     if (pCurrentDrawable)
     {
@@ -196,12 +213,20 @@ void CHW::BeginScene()
     pCurrentCommandBuffer = pCommandQueue->commandBuffer();
     if (pMetalLayer)
         pCurrentDrawable = pMetalLayer->nextDrawable();
+
+    // Recycle the transient constant-buffer ring and drop pass state cached
+    // against the previous frame's drawable (Task 19 frame-lifecycle contract).
+    RPManager.OnFrameBegin();
 }
 
 void CHW::EndScene()
 {
     if (!pCurrentCommandBuffer)
         return;
+
+    // End the open encoder and flush unconsumed pending clears — a command
+    // buffer must not be committed while an encoder is recording.
+    RPManager.OnFrameEnd();
 
     pCurrentCommandBuffer->commit();
     pCurrentCommandBuffer->release();
