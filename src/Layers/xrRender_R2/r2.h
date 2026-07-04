@@ -425,6 +425,9 @@ public:
     ID3DBaseTexture* texture_load(pcstr fname, u32& msize);
 #elif defined(USE_OGL)
     GLuint           texture_load(pcstr fname, u32& msize, GLenum& ret_desc);
+#elif defined(USE_METAL)
+    // Returns an MTL::Texture* as an opaque handle; ret_desc receives the MTL::TextureType.
+    uint64_t         texture_load(pcstr fname, u32& msize, u32& ret_desc);
 #else
 #   error No graphics API selected or enabled!
 #endif
