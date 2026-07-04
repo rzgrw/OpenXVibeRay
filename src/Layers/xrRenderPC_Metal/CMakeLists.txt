@@ -346,12 +346,12 @@ target_sources(xrRender_Metal PRIVATE
     #../xrRenderMetal/Blender_Recorder_Metal.cpp       # TODO Task 13
     #../xrRenderMetal/metalBufferUtils.cpp             # TODO Task 8
     #../xrRenderMetal/metalDetailManager_VS.cpp        # TODO Task 16
-    #../xrRenderMetal/metalHWCaps.cpp                  # TODO Task 9
+    ../xrRenderMetal/metalHWCaps.cpp
     #../xrRenderMetal/metalr_constants.cpp             # TODO Task 10
     #../xrRenderMetal/metalr_screenshot.cpp            # TODO Task 15
-    #../xrRenderMetal/metalResourceManager_Resources.cpp # TODO Task 12
-    #../xrRenderMetal/metalResourceManager_Scripting.cpp # TODO Task 12
-    #../xrRenderMetal/metalSH_RT.cpp                  # TODO Task 11
+    ../xrRenderMetal/metalResourceManager_Resources.cpp
+    ../xrRenderMetal/metalResourceManager_Scripting.cpp
+    ../xrRenderMetal/metalSH_RT.cpp
     ../xrRenderMetal/metalSH_Texture.cpp
     ../xrRenderMetal/metalStateUtils.cpp
     ../xrRenderMetal/metalStateUtils.h
