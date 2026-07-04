@@ -164,15 +164,15 @@ void CAgentBridge::Respond(const std::string& id, bool ok, const std::string& pa
 
 namespace
 {
-    void push_key_event(SDL_Keycode kc, bool down)
+    void push_key_event(SDL_Scancode sc, bool down)
     {
         SDL_Event e{};
         e.type = down ? SDL_KEYDOWN : SDL_KEYUP;
         e.key.timestamp = SDL_GetTicks();
         e.key.windowID = SDL_GetWindowID(Device.m_sdlWnd);
         e.key.state = down ? SDL_PRESSED : SDL_RELEASED;
-        e.key.keysym.sym = kc;
-        e.key.keysym.scancode = SDL_GetScancodeFromKey(kc);
+        e.key.keysym.scancode = sc;
+        e.key.keysym.sym = SDL_GetKeyFromScancode(sc);
         SDL_PushEvent(&e);
     }
 
@@ -194,7 +194,7 @@ void CAgentBridge::OnFrame()
     // taps: the down was pushed last frame; release now so the game saw one full frame held
     while (!m_pendingKeyUps.empty())
     {
-        push_key_event(SDL_Keycode(m_pendingKeyUps.front()), false);
+        push_key_event(SDL_Scancode(m_pendingKeyUps.front()), false);
         m_pendingKeyUps.pop_front();
     }
     while (!m_pendingBtnUps.empty())
@@ -375,17 +375,27 @@ std::string CAgentBridge::VerbKey(const std::string& payload, bool& ok)
         return "usage: key <sdl_key_name> down|up|tap";
     }
 
-    const SDL_Keycode kc = SDL_GetKeyFromName(name);
-    if (kc == SDLK_UNKNOWN) { ok = false; return std::string("unknown key: ") + name; }
+    // Physical scancode first: game bindings are scancode-based, and deriving
+    // scancodes from key symbols depends on the user's ACTIVE keyboard layout
+    // (a Cyrillic layout has no physical key producing 'w' — injection went
+    // nowhere whenever the user's layout was toggled to Russian).
+    SDL_Scancode sc = SDL_GetScancodeFromName(name);
+    if (sc == SDL_SCANCODE_UNKNOWN)
+    {
+        const SDL_Keycode kc = SDL_GetKeyFromName(name);
+        if (kc != SDLK_UNKNOWN)
+            sc = SDL_GetScancodeFromKey(kc);
+    }
+    if (sc == SDL_SCANCODE_UNKNOWN) { ok = false; return std::string("unknown key: ") + name; }
 
     if (0 == xr_strcmp(action, "down"))
-        push_key_event(kc, true);
+        push_key_event(sc, true);
     else if (0 == xr_strcmp(action, "up"))
-        push_key_event(kc, false);
+        push_key_event(sc, false);
     else if (0 == xr_strcmp(action, "tap"))
     {
-        push_key_event(kc, true);
-        m_pendingKeyUps.push_back(u32(kc));
+        push_key_event(sc, true);
+        m_pendingKeyUps.push_back(u32(sc));
     }
     else { ok = false; return std::string("unknown action: ") + action; }
     return "";
@@ -454,7 +464,9 @@ std::string CAgentBridge::VerbState(bool& ok)
 {
     string256 buf;
     const float fps = Device.fTimeDelta > EPS ? 1.f / Device.fTimeDelta : 0.f;
-    xr_sprintf(buf, "scene=%s fps=%.0f frame=%u", g_pGameLevel ? "game" : "menu", fps, Device.dwFrame);
+    xr_sprintf(buf, "scene=%s fps=%.0f frame=%u paused=%d loadscr=%d precache=%u",
+        g_pGameLevel ? "game" : "menu", fps, Device.dwFrame,
+        Device.Paused() ? 1 : 0, load_screen_renderer.IsActive() ? 1 : 0, Device.dwPrecacheFrame);
     std::string out = buf;
 
     if (g_pGameLevel && GEnv.ScriptEngine)

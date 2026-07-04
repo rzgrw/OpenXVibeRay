@@ -1,16 +1,15 @@
-# Agent bridge acceptance: load save, verify movement, screenshot, quit.
+# Movement repro v2: dismiss the post-load input-wait screen first
 hello
-state
 cmd start server(1/single/alife/load) client(localhost)
 sleep 45
+state
 key space tap
 sleep 2
 state
 lua db.actor:position().x .. "," .. db.actor:position().z
 key w down
-sleep 2
+sleep 3
 key w up
+sleep 1
 lua db.actor:position().x .. "," .. db.actor:position().z
-shot bridge_acceptance
-sleep 2
 cmd quit

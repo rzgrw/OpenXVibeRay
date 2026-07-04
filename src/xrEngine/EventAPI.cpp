@@ -204,9 +204,17 @@ bool CEventAPI::Peek(pcstr EName)
 
 void CEventAPI::_destroy()
 {
-    Dump();
-    if (Events.empty())
-        Events.clear();
-    if (Events_Deferred.empty())
-        Events_Deferred.clear();
+    CS.Enter();
+    // Pending deferred signals must never fire into subsystems that are
+    // mid-teardown — drop them, releasing the refs Defer() took.
+    // (The old conditional clears only ran when already empty: no-ops.)
+    for (Deferred& D : Events_Deferred)
+    {
+        EVENT E = D.E;
+        Destroy(E); // CS is recursive; may erase+delete on last ref
+    }
+    Events_Deferred.clear();
+    CS.Leave();
+
+    Dump(); // remaining entries are still-attached handlers (expected: engine-lifetime events)
 }

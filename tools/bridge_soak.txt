@@ -1,0 +1,62 @@
+# Stabilization soak: exercise movement, look, save/load cycle, console ops.
+hello
+state
+cmd start server(1/single/alife/load) client(localhost)
+sleep 45
+key space tap
+sleep 2
+state
+# -- movement in all directions --
+key w down
+sleep 2
+key w up
+key s down
+sleep 1
+key s up
+key a down
+sleep 1
+key a up
+key d down
+sleep 1
+key d up
+state
+# -- mouse look sweep --
+mouse move 200 0
+sleep 1
+mouse move 200 0
+sleep 1
+mouse move -400 50
+sleep 1
+state
+shot soak_look
+# -- sprint + jump + crouch through real bindings --
+key x down
+key w down
+sleep 2
+key w up
+key x up
+key space tap
+sleep 1
+key c tap
+sleep 1
+key c tap
+state
+# -- save through console, then reload the save --
+cmd save soaktest
+sleep 3
+cmd load soaktest
+sleep 40
+key space tap
+sleep 2
+state
+lua db.actor:position().x .. "," .. db.actor:position().z
+shot soak_after_reload
+sleep 2
+# -- inventory open/close (real UI path) --
+key i tap
+sleep 1
+shot soak_inventory
+key escape tap
+sleep 1
+state
+cmd quit
