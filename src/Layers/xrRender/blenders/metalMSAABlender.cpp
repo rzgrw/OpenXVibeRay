@@ -1,0 +1,27 @@
+// Metal copy of glMSAABlender.cpp — the blender description is API-agnostic
+// (shared CBlender_Compile calls); Metal uses the GL-style combined r_Sampler
+// path rather than the dx11Texture/dx11Sampler split.
+#include "stdafx.h"
+#include "dx11MSAABlender.h"
+
+namespace xray::render::RENDER_NAMESPACE
+{
+void CBlender_msaa::Compile(CBlender_Compile& C)
+{
+    IBlender::Compile(C);
+
+    switch (C.iElement)
+    {
+    case 0:
+        C.r_Pass("stub_notransform_2uv", "mark_msaa_edges", false, FALSE, FALSE, FALSE);
+        C.PassSET_ZB(FALSE,FALSE,FALSE);
+
+        C.r_Sampler_rtf("s_position", r2_RT_P);
+        C.r_Sampler_rtf("s_normal", r2_RT_N);
+
+        C.r_End();
+
+        break;
+    }
+}
+} // namespace xray::render::RENDER_NAMESPACE
