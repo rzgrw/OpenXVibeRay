@@ -7,5 +7,10 @@
 #
 # This file exists as documentation and a placeholder.
 # Sources to include in xrRenderPC_Metal:
+#   metalBufferUtils.cpp
+#   metalConstantBuffer.cpp
 #   metalHW.cpp
+#   metalr_constants.cpp
 #   metalState.cpp
+#   metalStateUtils.cpp
+#   metalVertexInput.cpp

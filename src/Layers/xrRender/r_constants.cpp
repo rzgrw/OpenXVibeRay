@@ -76,6 +76,11 @@ void R_constant_table::merge(R_constant_table* T)
     if (T->dx9compatibility)
         dx9compatibility = true;
 
+#if defined(USE_METAL)
+    mtl_vs_block_size = std::max(mtl_vs_block_size, T->mtl_vs_block_size);
+    mtl_ps_block_size = std::max(mtl_ps_block_size, T->mtl_ps_block_size);
+#endif
+
     // Real merge
     xr_vector<ref_constant> table_tmp;
     table_tmp.reserve(table.size());
@@ -152,6 +157,9 @@ void R_constant_table::clear()
     {
         m_CBTable[id].clear();
     }
+#elif defined(USE_METAL)
+    mtl_vs_block_size = 0;
+    mtl_ps_block_size = 0;
 #endif
 }
 
