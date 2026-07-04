@@ -146,7 +146,9 @@ IC HRESULT BeginQuery(uint64_t query)
 {
     if (!query)
         return E_FAIL;
-    OcclusionQueries.Begin(u32(query - 1), RPManager.CurrentEncoder());
+    // Never begins a pass: outside an open pass the query counts nothing (0),
+    // matching "occluded" — R_occlusion re-issues queries every frame.
+    OcclusionQueries.Begin(u32(query - 1), metalRenderPass::ActiveEncoder());
     return S_OK;
 }
 
@@ -154,7 +156,7 @@ IC HRESULT EndQuery(uint64_t query)
 {
     if (!query)
         return E_FAIL;
-    OcclusionQueries.End(u32(query - 1), RPManager.CurrentEncoder());
+    OcclusionQueries.End(u32(query - 1), metalRenderPass::ActiveEncoder());
     return S_OK;
 }
 
