@@ -30,6 +30,11 @@ void CAgentBridge::Initialize()
         FS.update_path(path, "$app_data_root$", "agent_bridge.sock");
     convert_path_separators(path); // FS paths use '\' — bind() needs the real POSIX path
 
+    // Agent-driven sessions run without OS window focus: keep the game
+    // simulating and accepting input as if focused, or every command
+    // lands in a paused world.
+    psDeviceFlags.set(rsAlwaysActive, true);
+
     g_agent_bridge = xr_new<CAgentBridge>(path);
 }
 

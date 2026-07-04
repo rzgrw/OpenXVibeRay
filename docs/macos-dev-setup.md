@@ -107,3 +107,13 @@ On macOS Tahoe beta, `sysctl -n hw.ncpu` appends a trailing space to its output.
 
 **Non-fatal CoC script warnings**
 Warnings about invalid object IDs and inventory slot miscounts appear in the log at startup. These are bugs in the Call of Chernobyl mod scripts, not in the engine, and do not affect gameplay.
+
+## Agent bridge (autonomous testing)
+
+Launch with `-agent_bridge [socket_path]` (default: `<appdata>/agent_bridge.sock`).
+Drive it with `tools/agentctl.py <socket> <verb> [payload]` or `--script <file>`.
+Verbs: hello, cmd, lua, key, mouse, state, shot, bye — protocol in
+`docs/superpowers/specs/2026-07-04-agent-bridge-design.md`.
+The bridge sets rs_always_active so the game keeps simulating without window focus.
+Example: `python3 tools/agentctl.py appdata/agent_bridge.sock lua 'db.actor.health'`
+Acceptance loop: `tools/bridge_acceptance.txt`.

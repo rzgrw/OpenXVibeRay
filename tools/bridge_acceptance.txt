@@ -1,0 +1,14 @@
+# Agent bridge acceptance: load save, verify movement, screenshot, quit.
+hello
+state
+cmd start server(1/single/alife/load) client(localhost)
+sleep 45
+state
+lua db.actor:position().x .. "," .. db.actor:position().z
+key w down
+sleep 2
+key w up
+lua db.actor:position().x .. "," .. db.actor:position().z
+shot bridge_acceptance
+sleep 2
+cmd quit
