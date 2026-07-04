@@ -1,10 +1,7 @@
 // metalHW.cpp — implementation of the Metal hardware device.
 // Uses metal-cpp C++ wrappers for the Metal API.
-// The PRIVATE_IMPLEMENTATION macros must be defined in exactly one TU.
-
-#define NS_PRIVATE_IMPLEMENTATION
-#define MTL_PRIVATE_IMPLEMENTATION
-#define CA_PRIVATE_IMPLEMENTATION
+// (The metal-cpp PRIVATE_IMPLEMENTATION TU is metal_cpp_impl.cpp — it needs
+// exemption from unity builds AND PCH, which this file doesn't have.)
 
 #include "stdafx.h"
 #pragma hdrstop

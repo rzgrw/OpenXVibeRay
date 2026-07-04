@@ -33,8 +33,10 @@ void CBackend::OnFrameBegin()
 #if !defined(USE_OGL) && !defined(USE_METAL)
         // XXX: Getting broken HUD hands for OpenGL after calling rmNormal()
         RImplementation.rmNormal(*this);
-#else
+#elif defined(USE_OGL)
         set_FB(HW.pFB);
+#else // USE_METAL: no framebuffer object — handle 0 is the drawable
+        set_FB();
 #endif
         set_RT(RImplementation.Target->get_base_rt());
         set_ZB(RImplementation.Target->get_base_zb());
