@@ -1,4 +1,4 @@
-# OpenXVibeRay — Version Roadmap (V1 / V2 / V3)
+# OpenXVibeRay — Version Roadmap (V1 → V5)
 
 **Date:** 2026-07-04 (rev. 2026-07-05 — restructured around rz's version vision + cutting-edge research)
 **Status:** Approved direction (rz)
@@ -93,13 +93,17 @@ Full polish pass once V1 is functionally complete: eliminate obvious code and pr
 
 ---
 
-# V3 — Reserved (expansion band)
+# V3 — AI maturation: debug & deepen complexity
 
-Deliberately open. V3 is the room between "sharp engine" (V2) and "extreme-performance rewrite" (V4) — the natural home for whatever the engine has earned the right to do by then: deeper graphics/AI advancement (mesh shaders, neural materials, richer LLM-driven simulation), broader content/mod tooling, or new game data support. Scope is intentionally undecided until V1/V2 land; not planned in detail yet.
+Harden and grow the LLM-backed AI introduced in V1. This is where the AI stops being a working seam and becomes genuinely good: debug provider behavior at scale (latency, cost, coherence, fallback correctness), deepen simulation complexity (richer faction/economy/territory dynamics, long-term NPC memory + reflection, emergent narrative), tune the tiering, and expand what the strategic director can actually steer. Bridge-scripted behavioral assertions and record/replay from A4 are the tools; the goal is an AI world that feels alive and holds together under complexity, not just one that runs.
 
-# V4 — Rust rewrite for extreme performance
+# V4 — Reserved (expansion band)
 
-Complete rewrite of the (by-then clean, well-understood) engine into Rust — further out than originally numbered; this is a long-horizon goal, not a near-term one. Approach: incremental FFI-based migration (`cxx`/`bindgen`) starting from leaf/pure-logic subsystems (sim, math, asset pipeline) toward the graphics/FFI-heavy core; Metal via `metal-rs`; ECS for the sim. V1+V2 exist partly to *earn* this — a sharp C++ engine with clear module boundaries and a self-testing harness is the precondition for a safe rewrite, not a leap of faith.
+Deliberately open. The room between a mature engine and the Rust rewrite — the natural home for whatever the engine has earned the right to do by then: graphics R&D (mesh shaders, neural materials), broader content/mod tooling, new game-data support, platform breadth. Scope intentionally undecided until V1–V3 land; not planned in detail yet.
+
+# V5 — Rust rewrite for extreme performance
+
+Complete rewrite of the (by-then clean, well-understood) engine into Rust — the long-horizon endgame, not a near-term goal. Approach: incremental FFI-based migration (`cxx`/`bindgen`) starting from leaf/pure-logic subsystems (sim, math, asset pipeline) toward the graphics/FFI-heavy core; Metal via `metal-rs`; ECS for the sim. Everything before it exists partly to *earn* this — a sharp C++ engine with clear module boundaries and a self-testing harness is the precondition for a safe rewrite, not a leap of faith.
 
 ---
 
