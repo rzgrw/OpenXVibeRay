@@ -1,6 +1,6 @@
 # Viberay macOS Native Port with Metal Renderer — Design Spec
 
-> **⚠️ PARKED (2026-07-05).** This Metal-renderer design was implemented through compile+link (SP2 Tasks 1–21) and then parked when the renderer direction pivoted to **Vulkan everywhere (Mac-first via MoltenVK)** — see `2026-07-05-engine-roadmap-v2.md`. Retained as the Mac RT/TBDR insurance path. The SP3 app-bundle/DMG material remains relevant.
+> **✅ REVIVED (2026-07-05, dual-native decision).** This Metal backend is the **Mac renderer** in the dual-native strategy (Vulkan serves Linux/Windows). Implemented through compile+link (Tasks 1–21); bring-up (Tasks 22–24) is the active milestone. Plan of record: `2026-07-05-engine-roadmap-v2.md`.
 
 **Date:** 2026-03-29
 **Status:** Draft

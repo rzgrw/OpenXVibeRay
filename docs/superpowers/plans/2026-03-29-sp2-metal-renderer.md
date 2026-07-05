@@ -1,6 +1,6 @@
 # SP2: Metal Renderer Implementation Plan
 
-> **⚠️ PARKED (2026-07-05).** rz pivoted the renderer to **Vulkan everywhere** (MoltenVK on Mac) — see `../specs/2026-07-05-vulkan-renderer-roadmap.md`. The Metal backend built by this plan (`xrRenderMetal`/`xrRenderPC_Metal`, Tasks 1–21 done: compiles + links, never rendered a frame) is **retained, not deleted** — it is the insurance path for the two things Vulkan-on-Metal cannot do: **hardware ray tracing + TBDR tile-memory** on Apple Silicon. Tasks 22–24 (runtime bring-up) are on hold; the go-forward renderer is Vulkan. Much of this plan's shader pipeline (glslang GLSL→SPIR-V) and shared-code ifdef scaffolding transfers directly to Vulkan.
+> **✅ REVIVED (2026-07-05, dual-native decision).** After a brief parking during the Vulkan-everywhere exploration, rz adopted **dual-native renderers**: this Metal backend IS the Mac renderer (Vulkan serves Linux/Windows). Tasks 1–21 are done (compiles+links). **Tasks 22–24 (first frame → CoC parity) are the active next code milestone** — entry point: the blender `VERIFY` at device create. After parity, the Metal R1–R3 ladder (TBDR/MetalFX/Metal RT) from `../specs/2026-07-04-engine-v2-roadmap.md`'s research applies. Plan of record: `../specs/2026-07-05-engine-roadmap-v2.md`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

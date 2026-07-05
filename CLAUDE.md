@@ -2,16 +2,16 @@
 
 ## Project Overview
 
-OpenXVibeRay is a fork of OpenXRay (X-Ray Engine for S.T.A.L.K.E.R.) being rebuilt with AI coding agents. The original engine is **inspiration and foundation, not scripture**. Current direction (plan of record: `docs/superpowers/specs/2026-07-04-engine-v2-roadmap.md`):
+OpenXVibeRay is a fork of OpenXRay (X-Ray Engine for S.T.A.L.K.E.R.) being rebuilt with AI coding agents. The original engine is **inspiration and foundation, not scripture**. Current direction (plan of record: `docs/superpowers/specs/2026-07-05-engine-roadmap-v2.md`):
 
-- **Renderer:** platform-agnostic **Vulkan everywhere** (MoltenVK on macOS), executed **Mac-first** — spec: `docs/superpowers/specs/2026-07-05-vulkan-renderer-roadmap.md`. The native **Metal backend is PARKED** (built, compiles+links, never rendered a frame; kept as the Mac RT/TBDR insurance path). GL is the working fallback until Vulkan parity.
+- **Renderer:** **DUAL-NATIVE** — native **Metal on macOS** (revived; bring-up Tasks 22–24 = next code milestone) + native **Vulkan on Linux/Windows** (developed on Mac via MoltenVK as a dev vehicle). Plan: `docs/superpowers/specs/2026-07-05-engine-roadmap-v2.md`. GL is the working fallback until both reach parity.
 - **AI:** the Zone is simulated by **LLM agents** (xrMind WorldAgents; thin C++ xrSim state store + near-player executor) — spec: `docs/superpowers/specs/2026-07-05-agentic-zone-design.md`. AI comes **after** the renderer.
 - **Agent bridge (shipped):** launch with `-agent_bridge`, drive via `tools/agentctl.py` — Claude can run, control, and screenshot the game itself. This is the standard verification harness.
 
 ## Architecture
 
 - **Engine core:** C++17, CMake 3.23+, SDL2 for windowing/input, OpenAL for audio
-- **Renderers:** OpenGL (working, cross-platform, the current runtime), Metal (parked, `XRAY_METAL=OFF` default), DX11 (Windows legacy, no investment), Vulkan (next — `xrRenderVulkan`/`xrRenderPC_Vulkan`, not yet created)
+- **Renderers:** OpenGL (working, the current runtime), Metal (Mac renderer, bring-up active, `XRAY_METAL=OFF` until first-frame gate), Vulkan (PC renderer, not yet created), DX11 (Windows legacy, no investment)
 - **Scripting:** LuaJIT + luabind for game logic (to be reduced by the AI rehaul)
 - **Platform layer:** `src/Common/Platform.hpp` → `PlatformApple.inl` / `PlatformLinux.inl` / `PlatformWindows.inl`
 
@@ -20,8 +20,8 @@ OpenXVibeRay is a fork of OpenXRay (X-Ray Engine for S.T.A.L.K.E.R.) being rebui
 ```
 src/Layers/xrRenderPC_GL/    # OpenGL renderer (working baseline)
 src/Layers/xrRenderGL/       # GL hardware abstraction
-src/Layers/xrRenderMetal/    # PARKED Metal HAL (RT/TBDR insurance)
-src/Layers/xrRenderPC_Metal/ # PARKED Metal module (EXCLUDE_FROM_ALL)
+src/Layers/xrRenderMetal/    # Metal HAL — the Mac renderer (bring-up active)
+src/Layers/xrRenderPC_Metal/ # Metal module (EXCLUDE_FROM_ALL until first frame)
 src/Layers/xrRender/         # Shared render code (USE_DX11/USE_OGL/USE_METAL branches)
 src/Layers/xrRender_R2/      # Shared render logic (CRender, phases)
 src/xrEngine/                # Core engine, SDL2, input, console, AgentBridge
@@ -44,13 +44,13 @@ Binaries go to `bin/arm64/Release/` (not `build/bin/`).
 
 On macOS Tahoe beta, also pass: `-DCMAKE_OSX_SYSROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk`
 
-`-DXRAY_METAL=ON` builds/links the parked Metal module (off by default; leave off unless working on the Metal insurance path).
+`-DXRAY_METAL=ON` builds/links the Metal module (the Mac renderer under bring-up; off by default until its first-frame gate).
 
 ## Critical macOS Constraints
 
 - **XRAY_EXCEPTIONS=0 on Darwin** (`src/CMakeLists.txt`). C++ exceptions cannot propagate through LuaJIT's ARM64 trampoline. THROW compiles to VERIFY (fatal abort). Do NOT re-enable. Consequence for all new code: **failures must be values, never throws** (see the two-phase-validation pattern in the specs).
 - **`sysctl -n hw.ncpu`** returns trailing space on Tahoe. Use `-j10`.
-- **OpenGL 4.1** is the macOS ceiling — the reason for the renderer replacement (now Vulkan/MoltenVK).
+- **OpenGL 4.1** is the macOS ceiling — the reason for the renderer replacement (native Metal on Mac; Vulkan on PC).
 
 ## Testing — use the agent bridge
 
@@ -73,16 +73,16 @@ Verbs: `hello/cmd/lua/key/mouse/state/shot/bye`. The soak (movement, save/load, 
 
 ## Documentation
 
-- `docs/superpowers/specs/2026-07-04-engine-v2-roadmap.md` — **master roadmap (V1–V5), read first**
+- `docs/superpowers/specs/2026-07-05-engine-roadmap-v2.md` — **THE plan of record (V1–V5), read first**
 - `docs/superpowers/specs/2026-07-05-vulkan-renderer-roadmap.md` — current renderer plan (V-R0…V-R3)
 - `docs/superpowers/specs/2026-07-05-agentic-zone-design.md` — current AI plan (xrMind/xrSim)
-- Parked/superseded (banners inside say so): SP2 Metal plan, zone-simulation (deterministic parts), seamless streaming, `CONTINUATION.md` (historical SP2 resume guide)
+- Parked/superseded (banners inside say so): old 07-04 roadmap, zone-simulation (deterministic parts), seamless streaming, `CONTINUATION.md`. The SP2 Metal plan is **REVIVED** (Tasks 22–24 active).
 - `docs/macos-dev-setup.md` — build/run + agent bridge usage
 
 ## Current State (2026-07-05)
 
 - **Engine stabilization:** complete — exit hangs, signal safety, resolution handling, GL error surfacing all fixed; bridge soak green.
 - **Agent bridge:** shipped and proven.
-- **Metal backend:** Tasks 1–21 done (compiles + links), **parked** before first frame; `XRAY_METAL=OFF` default.
-- **Vulkan renderer:** next code milestone — **V-R0: first triangle on Mac via MoltenVK** (deps volk/vk-bootstrap/VMA/MoltenVK not yet vendored).
+- **Metal backend (Mac renderer):** Tasks 1–21 done; **next code milestone = M-R0 first frame** (Tasks 22–24; entry point: blender VERIFY at device create).
+- **Vulkan renderer (PC):** follows — V-R0 triangle via MoltenVK dev vehicle (deps not yet vendored).
 - **AI (agentic Zone):** fully specced, starts after the renderer.

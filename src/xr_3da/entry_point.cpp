@@ -29,10 +29,10 @@ std::array s_render_modules =
     xray::render::render_r4::GetRendererModule(),
 #endif
     // GL first: it is the default/fallback renderer — the auto-select
-    // fallback must never land on an unproven backend. Metal is the PARKED
-    // insurance path (explicit opt-in via "renderer renderer_metal"); the
-    // go-forward renderer is Vulkan — see
-    // docs/superpowers/specs/2026-07-05-engine-roadmap-v2.md.
+    // fallback must never land on an unproven backend. Metal is the Mac
+    // renderer under bring-up (explicit opt-in via "renderer renderer_metal"
+    // until its first-frame gate); Vulkan will join for Linux/Windows.
+    // Plan: docs/superpowers/specs/2026-07-05-engine-roadmap-v2.md.
     xray::render::render_gl::GetRendererModule(),
 #if defined(XR_PLATFORM_APPLE) && defined(XR_METAL_RENDERER)
     xray::render::render_metal::GetRendererModule(),

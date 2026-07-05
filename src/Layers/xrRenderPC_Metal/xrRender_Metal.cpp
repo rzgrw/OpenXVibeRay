@@ -11,8 +11,9 @@ namespace xray::render::RENDER_NAMESPACE
 {
 // Distinct token: GL also serves the R3 pipeline level under "renderer_r3",
 // and existing configs must keep resolving to GL. Metal is explicit opt-in
-// ("renderer renderer_metal"). This backend is PARKED — the go-forward
-// renderer is Vulkan (specs/2026-07-05-engine-roadmap-v2.md).
+// ("renderer renderer_metal"). This backend is the MAC renderer in the
+// dual-native strategy (Vulkan serves Linux/Windows) — see
+// specs/2026-07-05-engine-roadmap-v2.md. Becomes default-on at first-frame exit.
 constexpr pcstr RENDERER_METAL_MODE = "renderer_metal"; // R3 pipeline level (id 4)
 
 class RMetalRendererModule final : public RendererModule

@@ -1,9 +1,9 @@
 if (APPLE)
 
-# PARKED backend (compiles + links; never rendered a frame). Kept as the
-# Mac RT/TBDR insurance path — the go-forward renderer is Vulkan (see
-# docs/superpowers/specs/2026-07-05-engine-roadmap-v2.md). EXCLUDE_FROM_ALL:
-# build explicitly with -DXRAY_METAL=ON / --target xrRender_Metal.
+# The MAC renderer (dual-native strategy: Metal on macOS, Vulkan on PC —
+# docs/superpowers/specs/2026-07-05-engine-roadmap-v2.md). Compiles+links;
+# bring-up (SP2 Tasks 22-24) in progress. EXCLUDE_FROM_ALL + XRAY_METAL=OFF
+# until the first-frame exit gate, then flips default-ON.
 add_library(xrRender_Metal EXCLUDE_FROM_ALL)
 
 target_sources(xrRender_Metal PRIVATE
