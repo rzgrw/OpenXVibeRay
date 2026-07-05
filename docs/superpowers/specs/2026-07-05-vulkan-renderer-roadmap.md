@@ -145,6 +145,23 @@ Add the surface bring-up in `src/xrEngine/Device_Initialize.cpp` (today it only 
 
 ---
 
+## 5b. Unified memory — cross-platform zero-staging strategy (first-class, rz 2026-07-05)
+
+Unified memory is a design pillar, not a Metal-only trick. Vulkan expresses it through memory-type flags, and it pays off on Apple Silicon (primary), integrated GPUs, AMD APUs, and discrete cards with Resizable BAR — so one strategy serves all three platforms while being *optimal* on the primary target.
+
+**The topology-adaptive upload path (the whole point).** At device init, classify the memory topology from `VkPhysicalDeviceMemoryProperties` (+ `VK_EXT_memory_budget`):
+- **UMA / integrated / Apple-Silicon-via-MoltenVK:** a memory type with **`DEVICE_LOCAL | HOST_VISIBLE`** exists. Allocate resources there, **persistently map** them, and have the CPU write directly — the GPU reads the same physical memory. **No staging buffer, no transfer-queue copy, ever.** This is the unified-memory win, and on Apple Silicon it is the *only* path taken.
+- **Discrete + Resizable BAR / Smart Access Memory:** all of VRAM is `HOST_VISIBLE | DEVICE_LOCAL` → same direct-upload path.
+- **Discrete without ReBAR:** `DEVICE_LOCAL` is not host-visible → fall back to a `HOST_VISIBLE` staging buffer + `vkCmdCopyBuffer` on the transfer queue.
+
+**One code path, not three.** Route all allocation through **VMA** (`VMA_MEMORY_USAGE_AUTO` + `HOST_ACCESS_SEQUENTIAL_WRITE`); after each allocation, check `vmaGetAllocationMemoryProperties` — if the block came back `HOST_VISIBLE`, `memcpy` into the persistent mapping and skip staging; otherwise take the staging+copy branch. The engine writes uploads once; VMA + this check pick zero-copy vs staging per GPU. On Apple Silicon the check always says "host-visible" → the staging branch is dead code there.
+
+**Consequences designed in:**
+- **Per-frame dynamic data** (uniforms, dynamic vertex/index, the constant ring) lives in host-visible device-local ring buffers on UMA — the "unified arena" from the old Metal plan, now in Vulkan, zero staging.
+- **Persistent mapping** everywhere host-visible (no map/unmap churn; UMA is coherent or explicitly flushed via `VK_WHOLE_SIZE` ranges).
+- **Memory-budget citizenship** via `VK_EXT_memory_budget`: on Apple Silicon the GPU shares system RAM, and we already reserved that RAM for the renderer (not a local LLM — see agentic-zone spec), so the renderer must track budget and evict/stream within it, never over-commit.
+- **Honest ceiling (from the MoltenVK research):** Vulkan can't set per-resource storage modes as precisely as native Metal, and **can't reach memoryless/tile-memory** — those deepest TBDR wins stay in the parked Metal path. But the *load-bearing* UMA benefit (zero-staging direct upload + persistent mapping + budget awareness) is fully expressible in Vulkan and is exploited from V-R1 onward.
+
 ## 6. Phasing — V-R0 … V-R3 (replaces R1/R2/R3)
 
 **V-R0 — Bring-up & harness.**
@@ -152,8 +169,8 @@ Add SDL2 Vulkan surface path (`Device_Initialize.cpp`); `xrRenderVulkan` + `xrRe
 *Exit:* triangle renders on **Linux native + Mac/MoltenVK**; validation layers clean on both; AgentBridge `shot` produces a matching screenshot on each.
 
 **V-R1 — Feature-parity forward/deferred (GL-equivalent scene).**
-Port the R2 render phases onto dynamic rendering + the adapted render-pass manager & PSO cache; SPIR-V-based reflection; VMA-managed resources; load a CoC level and walk it.
-*Exit:* CoC level renders without crash on **Linux + Windows native + Mac/MoltenVK**; visual parity-or-better vs GL (Mac especially — target fixing the GL 4.1 shadow/lighting glitches); **Mac-primary on-device profiling** establishes the real perf baseline (no assumed numbers). **← GL DEPRECATION GATE:** once V-R1 exits on all three platforms, GL moves to reference-only; remove from default build path after one stabilization cycle.
+Port the R2 render phases onto dynamic rendering + the adapted render-pass manager & PSO cache; SPIR-V-based reflection; VMA-managed resources with the **topology-adaptive zero-staging upload path (§5b)** in place from the first resource; load a CoC level and walk it.
+*Exit:* CoC level renders without crash on **Linux + Windows native + Mac/MoltenVK**; visual parity-or-better vs GL (Mac especially — target fixing the GL 4.1 shadow/lighting glitches); **Mac-primary on-device profiling** establishes the real perf baseline (no assumed numbers); **verify zero-staging uploads on Apple Silicon** (no staging buffers allocated; `vmaGetAllocationMemoryProperties` reports host-visible device-local for uploads) and staging-fallback exercised on a discrete-no-ReBAR PC GPU. **← GL DEPRECATION GATE:** once V-R1 exits on all three platforms, GL moves to reference-only; remove from default build path after one stabilization cycle.
 
 **V-R2 — GPU-driven core.**
 Bindless (descriptor indexing / arg buffers), draw-indirect-count, culling compute. DGC as a **PC-only optional accelerator** that degrades to CPU-recorded draw-indirect on Mac. **A/B measure argument buffers on Apple Silicon** — do not assume bindless is a free win.
