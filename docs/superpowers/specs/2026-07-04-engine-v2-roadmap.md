@@ -23,7 +23,7 @@ Rebuild this X-Ray fork into a **native macOS engine that is the best-performing
 
 Three epics. **Renderer first, AI after.** Goal: Metal renderer stabilized and working with existing game resources **on par or faster** than the old GL path, with raytracing plumbing in place and modern graphics techniques; AI rehauled for LLMs + simulation. Best possible performance on unified-memory M-series.
 
-**A live, continuous Zone is the throughline of both epics.** The Zone is *always simulated in full* (`xrSim`, `2026-07-05-zone-simulation-design.md`) and *seamlessly streamed* (`xrStream`, `2026-07-05-seamless-zone-streaming-design.md`) — one continuous world with cross-region interactions, no loading screens within a contiguous cell cluster (sub-second async transitions elsewhere). The two couple directly: what `xrStream` streams in is exactly `xrSim`'s ONLINE band. Both are detailed in their own specs; the epic sections below cover the renderer/AI machinery they ride on.
+**A live, always-simulated Zone is the throughline of the AI epic.** The whole Zone is simulated continuously with cross-region interactions (`xrSim`, `2026-07-05-zone-simulation-design.md`) — factions, ecology, economy, and events run across every region whether or not the player is there, exactly as ALife already does. **We keep X-Ray's classic per-level loading model** (the current level is rendered/physical; other regions are simulated offline). Seamless no-loading-screen streaming was explored (`xrStream`, `2026-07-05-seamless-zone-streaming-design.md`) and is **parked** — a future option, not on the V1 plan.
 
 ## Epic T — Agent bridge ✅ DONE
 

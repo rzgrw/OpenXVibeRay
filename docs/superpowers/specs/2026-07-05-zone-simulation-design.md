@@ -53,7 +53,7 @@ xrSim is a single deterministic fixed-tick simulation that **owns all Zone state
 
 ## 2. The simulation core
 
-> **Streaming coupling:** the LOD bands here (ONLINE / OFFLINE / STATISTICAL / DORMANT) are the sim-side of seamless world streaming. What the streaming system (`xrStream`, `2026-07-05-seamless-zone-streaming-design.md`) has resident-in-geometry is exactly where an entity may be ONLINE; the whole Zone is always at least STATISTICAL regardless of what's loaded. Cross-region interactions (migration, faction pushes, emissions, economy, events) run in the always-on bands independent of streaming residency. Read the two specs together.
+> **Loading model:** the LOD bands here (ONLINE / OFFLINE / STATISTICAL / DORMANT) map onto X-Ray's classic per-level model — entities on the **currently loaded level** can be ONLINE (physics/behavior/geometry); entities on **other levels** run OFFLINE/STATISTICAL, exactly as ALife does today. The whole Zone is always at least STATISTICAL regardless of which level is loaded, so cross-region interactions (migration, faction pushes, emissions, economy, events) run continuously across the map. Seamless no-loading-screen streaming (which would let neighbor levels also be ONLINE) is **parked** — see `2026-07-05-seamless-zone-streaming-design.md`; not required for the live-Zone concept.
 
 ### 2.1 Region partition (the upstream decision)
 

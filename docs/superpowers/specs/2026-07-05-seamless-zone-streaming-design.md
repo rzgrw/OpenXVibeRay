@@ -1,7 +1,9 @@
 # Seamless Whole-Zone Streaming (xrStream) — Design Spec
 
+> **⚠️ PARKED (2026-07-05).** rz de-scoped seamless / no-loading-screen streaming; the current concept keeps X-Ray's classic per-level loading transitions. The whole-Zone *simulation* (xrSim) is retained — far regions are simulated offline, as ALife already does — only the seamless *rendering/streaming* of one continuous world is deferred. Preserved as a researched future option; its key finding (the global frame + whole-Zone sim already exist, so this is a de-singleton-ize problem, not a recompile) stays valid if revisited. **Not on the active V1 plan.**
+
 **Date:** 2026-07-05
-**Status:** Design approved in direction (rz) — implementation spec. Couples the renderer (V1 Epic R) and the sim (V1 Epic A).
+**Status:** PARKED / future option (was: design-approved). Not scheduled.
 **Parents:** `2026-07-05-zone-simulation-design.md` (xrSim), `2026-07-04-engine-v2-roadmap.md` (native Metal renderer)
 **Provenance:** 7-agent design workflow (X-Ray level structure grounded in this repo's source, streaming architecture, sim coupling, renderer residency, memory/feasibility) + gap-critique + synthesis. Fragments in the session scratchpad.
 
