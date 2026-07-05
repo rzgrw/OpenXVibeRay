@@ -38,9 +38,13 @@ The AI epic's riskiest unknowns (real $/wall-hour, RPM/429 behavior, LLM ecology
 Resume the parked SP2 plan at Task 22: boot with `renderer renderer_metal`; fix the known blender `VERIFY` at device create (first entry point); first clear → first geometry → CoC menu + level. Verified via bridge screenshots vs GL.
 *Exit:* CoC menu + loaded level render on Metal; bridge screenshot ≈ GL; soak green on Metal. Then M-R1+: parity → TBDR/MetalFX/Metal-RT ladder per the original Metal research (the parked R1–R3 stages return for the Metal backend).
 
-**V-R0 — First Vulkan triangle (developed on Mac via MoltenVK as dev vehicle; ships on PC).**
+**L0 — Linux dev-loop bootstrap (Ubuntu laptop, can start anytime).**
+rz has an Ubuntu laptop with a decent GPU. Bootstrap it as the second instrumented platform: build the existing GL game + agent bridge there (both are POSIX/cross-platform already), copy CoC data, get the bridge soak green on Linux. This de-risks V-RX years early and gives the Vulkan backend a NATIVE-first debug target (full API + validation on a real driver; MoltenVK remains the on-Mac convenience loop).
+*Exit:* GL CoC + bridge soak green on Ubuntu.
+
+**V-R0 — First Vulkan triangle (native on the Ubuntu laptop; MoltenVK on Mac as convenience).**
 Vendor deps (see Dependencies below); `xrRenderVulkan` + `xrRenderPC_Vulkan` (`RENDER_NAMESPACE=render_vulkan`, `EXCLUDE_FROM_ALL`, `XRAY_VULKAN=OFF` until this exits, then default ON); SDL2 Vulkan surface; instance/device/swapchain via vk-bootstrap (value-returning — fits `XRAY_EXCEPTIONS=0`); timeline-semaphore + sync2 from day one; clear + triangle via dynamic rendering; runtime glslang compile (port the metalShaderCompiler front half, **bump to EShTargetVulkan_1_3 / SPIR-V 1.6**, persist a `VkPipelineCache`).
-*Exit:* triangle on Mac; validation + portability-subset clean; bridge `shot` captures it; **orientation verified against GL output** (see Convention decision).
+*Exit:* triangle on the Ubuntu laptop (native driver, validation clean) AND on Mac via MoltenVK (portability-subset clean); bridge `shot` captures both; **orientation verified against GL output** (see Convention decision).
 
 **V-R1 — CoC scene parity (Vulkan, dev vehicle on Mac → ships on PC).**
 Port render phases onto dynamic rendering; SPIR-V reflection (own task — decoration-based, replaces MSL reflection); VMA with the topology-adaptive **zero-staging UMA path** from the first resource; SPIR-V optimizer/validation ON.
