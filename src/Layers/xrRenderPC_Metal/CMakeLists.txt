@@ -1,7 +1,9 @@
 if (APPLE)
 
-# EXCLUDE_FROM_ALL until the Metal backend compiles end-to-end (SP2 plan
-# Task 20) — build explicitly with: cmake --build build --target xrRender_Metal
+# PARKED backend (compiles + links; never rendered a frame). Kept as the
+# Mac RT/TBDR insurance path — the go-forward renderer is Vulkan (see
+# docs/superpowers/specs/2026-07-05-engine-roadmap-v2.md). EXCLUDE_FROM_ALL:
+# build explicitly with -DXRAY_METAL=ON / --target xrRender_Metal.
 add_library(xrRender_Metal EXCLUDE_FROM_ALL)
 
 target_sources(xrRender_Metal PRIVATE

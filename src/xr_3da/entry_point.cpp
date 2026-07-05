@@ -6,11 +6,6 @@
 #include "xrGame/xrGame.h"
 #include "Include/xrRender/xrRender.h"
 
-// Task 5 will add render_metal to xrRender.h; forward-declare it here for now
-#ifdef XR_PLATFORM_APPLE
-namespace xray::render::render_metal { RendererModule* GetRendererModule(); }
-#endif
-
 #if !defined(XR_PLATFORM_WINDOWS)
 #include <unistd.h>
 #include <stdlib.h>
@@ -33,9 +28,11 @@ std::array s_render_modules =
 #ifdef XR_PLATFORM_WINDOWS
     xray::render::render_r4::GetRendererModule(),
 #endif
-    // GL first: it is the default/fallback renderer. Metal stays explicit
-    // opt-in ("renderer renderer_metal") until it reaches parity (SP2 Tasks
-    // 22-24) — the auto-select fallback must never land on it meanwhile.
+    // GL first: it is the default/fallback renderer — the auto-select
+    // fallback must never land on an unproven backend. Metal is the PARKED
+    // insurance path (explicit opt-in via "renderer renderer_metal"); the
+    // go-forward renderer is Vulkan — see
+    // docs/superpowers/specs/2026-07-05-engine-roadmap-v2.md.
     xray::render::render_gl::GetRendererModule(),
 #if defined(XR_PLATFORM_APPLE) && defined(XR_METAL_RENDERER)
     xray::render::render_metal::GetRendererModule(),

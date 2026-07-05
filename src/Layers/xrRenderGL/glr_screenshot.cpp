@@ -22,10 +22,16 @@ void CRender::Screenshot(ScreenshotMode mode /*= SM_NORMAL*/, pcstr name /*= nul
     {
         pcstr extension = "jpg";
 
+        // Honor an explicit name (the agent-bridge `shot <name>` contract —
+        // callers must be able to locate the artifact they requested);
+        // fall back to the classic timestamped pattern.
         string64 time;
         string_path buf;
-        xr_sprintf(buf, sizeof(buf), "ss_%s_%s_(%s).%s", Core.UserName, timestamp(time),
-            g_pGameLevel ? g_pGameLevel->name().c_str() : "mainmenu", extension);
+        if (name && name[0])
+            xr_sprintf(buf, sizeof(buf), "%s.%s", name, extension);
+        else
+            xr_sprintf(buf, sizeof(buf), "ss_%s_%s_(%s).%s", Core.UserName, timestamp(time),
+                g_pGameLevel ? g_pGameLevel->name().c_str() : "mainmenu", extension);
 
         IWriter* fs = FS.w_open("$screenshots$", buf);
         R_ASSERT(fs);
