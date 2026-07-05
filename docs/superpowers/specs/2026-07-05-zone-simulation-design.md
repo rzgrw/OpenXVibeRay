@@ -1,7 +1,9 @@
 # The Live Zone Simulation (xrSim) — Design Spec
 
+> **⚠️ PARTIALLY SUPERSEDED (2026-07-05, same day).** rz pivoted: **LLM agents ARE the world sim**, not a deterministic C++ sim with an LLM advisor. See `2026-07-05-agentic-zone-design.md` (xrMind + xrSim). The **authority model here is inverted** — the deterministic ecology (Lotka-Volterra/Holling) and faction/economy math are DEMOTED (agents author the world; C++ only executes near-player + stores coarse state). **Still valid and carried forward:** the entity/id invariants (stable id never regenerated, two-phase validation, no THROW on Darwin), the coarse region model, the materialization concept, snapshot/restore, and the testability approach. Read the agentic-zone spec as the current design; read this for the surviving substrate.
+
 **Date:** 2026-07-05
-**Status:** Design approved in direction (rz) — implementation spec, V1 Epic A / matured in V3
+**Status:** Partially superseded by `2026-07-05-agentic-zone-design.md` (authority inverted). Substrate/invariants still current.
 **Parent:** `2026-07-04-engine-v2-roadmap.md` (V1 Epic A — "the Zone is simulated by the LLM")
 **Provenance:** Synthesized from a 7-agent design workflow (A-Life baseline grounded in this repo's OpenXRay source, wildlife ecology, faction/economy, Zone Director interface, sim/LOD architecture, testability) + a skeptical gap-critique, plus a dedicated hierarchical-subagent design pass. All design fragments in the session scratchpad.
 
