@@ -1,5 +1,7 @@
 # SP2: Metal Renderer Implementation Plan
 
+> **⚠️ PARKED (2026-07-05).** rz pivoted the renderer to **Vulkan everywhere** (MoltenVK on Mac) — see `../specs/2026-07-05-vulkan-renderer-roadmap.md`. The Metal backend built by this plan (`xrRenderMetal`/`xrRenderPC_Metal`, Tasks 1–21 done: compiles + links, never rendered a frame) is **retained, not deleted** — it is the insurance path for the two things Vulkan-on-Metal cannot do: **hardware ray tracing + TBDR tile-memory** on Apple Silicon. Tasks 22–24 (runtime bring-up) are on hold; the go-forward renderer is Vulkan. Much of this plan's shader pipeline (glslang GLSL→SPIR-V) and shared-code ifdef scaffolding transfers directly to Vulkan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace OpenGL with a native Metal renderer backend so S.T.A.L.K.E.R. runs on macOS with proper GPU support (beyond deprecated GL 4.1).

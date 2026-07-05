@@ -11,8 +11,8 @@ Rebuild this X-Ray fork into a **native macOS engine that is the best-performing
 **The founding principle:** the original X-Ray engine and codebase are **inspiration and foundation, not scripture.** We keep what earns its place (asset formats, game logic, level data, the feel) and shed what doesn't (the D3D9-era render abstraction, the two-headed ALife data model). Faithful preservation is a non-goal; a clean, sharp, fast native engine is the goal.
 
 **Guiding rules**
-1. **Native over portable.** New code uses Metal / POSIX / Apple idioms directly. OpenGL stays compiling as the fallback/reference until the native renderer reaches parity, then is retired behind a flag. Windows/DX11 gets no new investment.
-2. **Unified memory is the architecture.** `MTLStorageModeShared`, on-chip tile memory, zero staging copies — designed in, not bolted on.
+1. **Platform-agnostic, Mac-primary** *(rz 2026-07-05, reverses the earlier "native Metal over portable" rule).* The renderer is **Vulkan everywhere** — native on Linux/Windows, MoltenVK on macOS — one modern codebase across all three desktop OSes. We tune/profile hardest on Apple Silicon (primary), but Linux/Windows are first-class must-run. The native-Metal renderer is **parked** as the insurance path for the two things Vulkan-on-Metal can't do (ray tracing + TBDR tile-memory). GL stays as fallback until Vulkan parity, then retired. Full renderer plan: `2026-07-05-vulkan-renderer-roadmap.md`.
+2. **Unified memory is honored, not hard-coded to Metal.** Zero-staging direct-mapped uploads are expressible in Vulkan on Apple Silicon (DEVICE_LOCAL|HOST_VISIBLE heaps); the deepest TBDR-specific wins (memoryless/tile-memory) are reachable only via the parked Metal path and are treated as a Mac fast-path optimization, not a baseline dependency.
 3. **Stage, don't leap.** Every stage leaves the game runnable and verifiable through the agent bridge. Prove correctness, then chase performance, then extend.
 4. **The engine tests itself.** The agent bridge is a first-class subsystem; every stage's exit criteria are bridge-scriptable.
 5. **Content survives, mods don't.** Importers keep CoC-era levels/spawns/smart-terrains playable. Script-level (Lua) mod compatibility is deliberately dropped in the AI rehaul.
@@ -29,35 +29,20 @@ Three epics. **Renderer first, AI after.** Goal: Metal renderer stabilized and w
 
 Unix-socket control channel (`-agent_bridge`) — verbs `hello/cmd/lua/key/mouse/state/shot/bye`, `tools/agentctl.py` client. It is the verification harness for everything below (parity screenshots, perf capture, AI scenario replay). Spec: `2026-07-04-agent-bridge-design.md`. Built and proven.
 
-## Epic R — Renderer (native Metal, staged)
+## Epic R — Renderer (Vulkan everywhere, staged) — full spec: `2026-07-05-vulkan-renderer-roadmap.md`
 
-**Decision (rz): bring-up first, then native.** The compat-layer Metal backend we already built (`uint64_t` handles mirroring D3D9/GL) is a **crutch for exactly one milestone** — get a correct frame and a parity capture — then it is frozen and never built upon. The native renderer is designed fresh.
+**Pivot (rz 2026-07-05):** platform-agnostic **Vulkan** renderer — native on Linux/Windows, MoltenVK on macOS, one codebase. Mac primary-tuned, Linux/Windows must-run. The native-Metal backend (SP2, compiles/links, never rendered a frame) is **parked**, kept as the insurance path for Mac ray tracing + TBDR tile-memory (the two things Vulkan-on-Metal can't reach). GL stays as fallback until Vulkan parity, then retired.
 
-**Decision (rz): RT-ready, defer depth.** Build acceleration-structure plumbing into the render graph early; ship V1 with one or two RT effects (shadows first), expand later.
+**Honest verdict** (from the 11-agent replan): Vulkan/MoltenVK is sound for raster/compute/GPU-driven on all three OSes and beats today's GL 4.1 Mac path; **ray tracing is not available on Mac through MoltenVK** (unimplemented, architectural blocker, no committed date) — so RT is **native on PC first**, Mac RT deferred to the parked Metal path. Consistent with "RT-ready, defer depth."
 
-### R0 — First frame (compat-layer crutch) — IN PROGRESS
-The backend compiles/links (8.7 MB dylib, `XRAY_METAL=ON` links). Remaining is SP2 Tasks 22–24:
-- First boot with `renderer renderer_metal`; first clear color; first geometry; then full CoC scene.
-- **Exit:** CoC menu + a loaded level render on Metal; bridge screenshot ≈ GL. This is the *only* milestone the compat layer needs to reach. First known runtime bug: a blender `VERIFY` at device create.
+**Big SP2 salvage:** the vendored **glslang GLSL→SPIR-V pipeline is Vulkan's native shader path** (drop only the SPIRV-Cross→MSL step); the `USE_METAL` shared-code ifdef branches become the `USE_VULKAN` template; the render-pass/pipeline/descriptor and RENDER_NAMESPACE patterns carry over. New backend pair: `xrRenderVulkan` (HAL) + `xrRenderPC_Vulkan` (`RENDER_NAMESPACE=render_vulkan`).
 
-### R1 — Native TBDR deferred core
-Freeze the compat layer; build the native path.
-- **Single-pass deferred in tile memory** exploiting TBDR: `imageblock<T>`, tile shaders (`dispatchThreadsPerTile`), `MTLStorageModeMemoryless` G-buffer attachments, `[[color(n)]]` framebuffer fetch, raster order groups. All shipping on every M-series.
-- **Load-bearing design choice:** the G-buffer emits **signed-format world normals + diffuse albedo + specular albedo + linear roughness** from day one — the exact channels the MetalFX denoiser and RT later require, so they drop in free.
-- **Exit:** full scene at or below GL frame time; frame-capture clean of validation warnings.
-
-### R2 — GPU-driven + modern presentation ("faster than GL")
-- GPU-driven rendering in strict order: **bindless (argument buffers tier 2) → indirect command buffers (ICBs) → `MTLResidencySet`**.
-- **MetalFX** spatial then temporal upscaling (needs motion vectors + depth + jitter — already produced by the deferred core).
-- **EDR/HDR** via CAMetalLayer, **ProMotion / adaptive frame pacing** (watch: SDL2 may hide the present path — may need a direct CAMetalLayer present hook).
-- **Exit:** measurably faster than GL at equal quality (target ≥30% GPU-time reduction); zero per-frame allocations.
-
-### R3 — Hybrid raytracing (RT-ready, one/two effects)
-- `MTLAccelerationStructure`: static BLAS at level load, refit actor BLAS, rebuild TLAS per frame (unified memory, GPU-driven/indirect builds).
-- Hardware `intersector<>` (M3+ Family 9, hardware traversal + Dynamic Caching) — **not** inline `intersection_query` on hot paths. **RT shadows first** (`accept_any_intersection(true)`), traced from fragment/tile stages to keep intermediates on-chip.
-- `MTLFXTemporalDenoisedScaler` so 1–2 samples/ray suffice.
-- **Version policy:** dual Metal 3 / Metal 4 paths; RT effects gate on M3+, everything else runs on all M-series. Mesh shaders + neural materials are R&D, not V1 deps.
-- **Exit:** RT shadows correct vs shadow maps, within frame budget on M3/M4; toggleable.
+Staged (details in the Vulkan spec):
+- **V-R0** — first triangle / clear on Vulkan on **all three OSes** via SDL2 (+MoltenVK on Mac). Deps: Vulkan-Headers/Loader, volk, vk-bootstrap, VMA; validation layers on for dev.
+- **V-R1** — native deferred core with `VK_KHR_dynamic_rendering` + descriptor indexing (bindless); full scene at/below GL.
+- **V-R2** — GPU-driven (draw-indirect-count, device-generated commands) + modern presentation; the "faster than GL" milestone.
+- **V-R3** — hybrid RT via `VK_KHR_ray_tracing` **native on Linux/Windows**; Mac RT only if MoltenVK lands AS support, else via the parked Metal fast-path.
+- Errors are **value-based** (no throw — `XRAY_EXCEPTIONS=0`). Verified cross-OS via the agent bridge (screenshot parity; Mac today, Linux/Windows CI later).
 
 ## Epic A — AI rehaul (LLM-backed, after the renderer)
 
