@@ -39,7 +39,7 @@ Resume the parked SP2 plan at Task 22: boot with `renderer renderer_metal`; fix 
 *Exit:* CoC menu + loaded level render on Metal; bridge screenshot ≈ GL; soak green on Metal. Then M-R1+: parity → TBDR/MetalFX/Metal-RT ladder per the original Metal research (the parked R1–R3 stages return for the Metal backend).
 
 **L0 — Linux dev-loop bootstrap (Ubuntu laptop, can start anytime).**
-rz has an Ubuntu laptop with a decent GPU. Bootstrap it as the second instrumented platform: build the existing GL game + agent bridge there (both are POSIX/cross-platform already), copy CoC data, get the bridge soak green on Linux. This de-risks V-RX years early and gives the Vulkan backend a NATIVE-first debug target (full API + validation on a real driver; MoltenVK remains the on-Mac convenience loop).
+rz has an Ubuntu laptop with an **NVIDIA RTX-class GPU** (full `VK_KHR` ray tracing via the proprietary driver — the V-R3 target). Sequencing (rz): **M-R0 (Metal first frame) first; L0 after** — bootstrap the laptop when Vulkan work starts. Bootstrap it as the second instrumented platform: build the existing GL game + agent bridge there (both are POSIX/cross-platform already), copy CoC data, get the bridge soak green on Linux. This de-risks V-RX years early and gives the Vulkan backend a NATIVE-first debug target (full API + validation on a real driver; MoltenVK remains the on-Mac convenience loop).
 *Exit:* GL CoC + bridge soak green on Ubuntu.
 
 **V-R0 — First Vulkan triangle (native on the Ubuntu laptop; MoltenVK on Mac as convenience).**
