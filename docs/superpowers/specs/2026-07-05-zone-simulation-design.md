@@ -53,6 +53,8 @@ xrSim is a single deterministic fixed-tick simulation that **owns all Zone state
 
 ## 2. The simulation core
 
+> **Streaming coupling:** the LOD bands here (ONLINE / OFFLINE / STATISTICAL / DORMANT) are the sim-side of seamless world streaming. What the streaming system (`xrStream`, `2026-07-05-seamless-zone-streaming-design.md`) has resident-in-geometry is exactly where an entity may be ONLINE; the whole Zone is always at least STATISTICAL regardless of what's loaded. Cross-region interactions (migration, faction pushes, emissions, economy, events) run in the always-on bands independent of streaming residency. Read the two specs together.
+
 ### 2.1 Region partition (the upstream decision)
 
 A **Region** is a purpose-built coarse partition of the Zone: **~30–60 authored regions** laid over the imported CoC game-graph, with **smart-terrains nested inside regions**. This single definition feeds every layer: ecology gets `area`/adjacency for carrying capacity and migration; the human layer gets ownership granularity and trade-route topology; the Director gets a token-affordable map; the statistical band gets its aggregation unit. Regions form an adjacency graph (the migration/travel/diffusion substrate). Cross-level edges come from the imported cross-tables.
