@@ -67,13 +67,18 @@ Deterministic fixed-tick world sim replacing ALife's registry/switch machinery: 
 ### A2 — Behavior layer (the always-on local tier)
 Utility-scored behavior trees replace GOAP/motivation stacks; perception + combat rebuilt on the new entities. Pathfinding core rewritten (incremental A*/HPA) over the imported AI-map graph. This is the reflex tier — and the fallback when no provider is available.
 
-### A3 — LLM provider seam (`xrAIProvider`)
-Three latency tiers:
-- **Reflex (per-frame):** always local (A2). Providers never here.
-- **Tactical (seconds):** squad orders, dialogue, reactions — Haiku / on-device SLM (llama.cpp-Metal), async, local fallback.
-- **Strategic (minutes):** faction goals, economy, emergent events, world steering — Sonnet/Opus batched via a per-faction "director."
+### A3 — LLM provider seam (`xrAIProvider`) — **the Zone is the LLM's domain**
 
-Cloud via raw **HTTP/SSE** (no C++ vendor SDK); structured outputs / tool-use for deterministic intents; faction-scoped memory (not per-NPC frontier calls — cost + coherence). Config (provider/model/key/budget) in LTX. Every call has a bounded budget and a silent local fallback; the game never blocks. Transport reuses the agent-bridge socket/framing code.
+**The centerpiece of the AI: the Zone itself is simulated by the LLM.** The living world — faction warfare, the economy, territorial control, mutant migrations, anomaly/emission events, stalker parties forming and dying, emergent quests and reputations, cause-and-effect across the map — is authored by an LLM **Zone Director** running on the strategic tick. This is where *all the deep, emergent complexity concentrates*: the Director reasons about the whole Zone as a system, the deterministic `xrSim` executes and persists its decisions, and the cheap tiers below stay lean and fast. The complexity budget (tokens, reasoning, latency) is spent here, on the Zone, and almost nowhere else.
+
+Three latency tiers, complexity increasing downward:
+- **Reflex (per-frame):** always local (A2), never an LLM. Movement, aiming, immediate combat.
+- **Tactical (seconds):** squad orders, dialogue, reactions — Haiku / on-device SLM (llama.cpp-Metal), async, local fallback.
+- **Strategic (minutes) = the Zone Director:** the LLM simulates the Zone as a whole — faction strategy, economy, emergent events, migrations, narrative causality — Sonnet/Opus, batched. Its output is a stream of **schema-constrained intents** that `xrSim` validates and applies deterministically over many ticks.
+
+**Critical design guardrail (prevents the obvious misread):** "all complexity in the LLM" does **not** mean the LLM computes every NPC every tick — that path is a cost/coherence disaster (the per-NPC frontier-call anti-pattern). It means the Director operates at the **Zone / faction / region level of abstraction**; the mechanical fan-out to thousands of entities is `xrSim`'s job, executing the Director's intents. The LLM authors *what the Zone does and why*; the sim computes *how it plays out*.
+
+Cloud via raw **HTTP/SSE** (no C++ vendor SDK); structured outputs / tool-use for deterministic intents; Zone/faction-scoped memory + reflection (not per-NPC). Config (provider/model/key/budget) in LTX. Every call has a bounded budget and a silent local fallback; the game never blocks on the Zone Director — a missed tick just means the world coasts on its last plan. Transport reuses the agent-bridge socket/framing code.
 
 ### A4 — Integration & tuning
 Bridge-scripted scenario tests: reproducible sim snapshots, provider-on/off A/B, behavioral assertions ("squad flanks within 30s", "faction war escalates within N days"), record/replay behind a recordable interface.
@@ -83,7 +88,7 @@ Bridge-scripted scenario tests: reproducible sim snapshots, provider-on/off A/B,
 2. **Native TBDR deferred core at/below GL frame time** (R1) — pivot committed.
 3. **GPU-driven + temporal upscale** (R2) — the "faster than GL" promise met.
 4. **Hybrid RT shadows + denoise** (R3) — RT-ready proven.
-5. **AI seam: one live faction director through record/replay** (A1→A3 vertical slice) — AI strictly after the renderer.
+5. **AI seam: the Zone Director live on one region, through record/replay** (A1→A3 vertical slice) — AI strictly after the renderer.
 
 ---
 
@@ -95,7 +100,7 @@ Full polish pass once V1 is functionally complete: eliminate obvious code and pr
 
 # V3 — AI maturation: debug & deepen complexity
 
-Harden and grow the LLM-backed AI introduced in V1. This is where the AI stops being a working seam and becomes genuinely good: debug provider behavior at scale (latency, cost, coherence, fallback correctness), deepen simulation complexity (richer faction/economy/territory dynamics, long-term NPC memory + reflection, emergent narrative), tune the tiering, and expand what the strategic director can actually steer. Bridge-scripted behavioral assertions and record/replay from A4 are the tools; the goal is an AI world that feels alive and holds together under complexity, not just one that runs.
+Where the **Zone becomes a properly LLM-simulated living world**, not just a working seam. V1 proves the Zone Director on one region; V3 makes it good and scales it Zone-wide: debug Director behavior at scale (latency, cost, coherence, fallback correctness), deepen the simulation the Director steers (rich faction/economy/territory dynamics, long-term Zone + faction memory and reflection, emergent narrative that persists and pays off), tune the tiering, and widen what the Director can meaningfully control. Bridge-scripted behavioral assertions and record/replay from A4 are the tools; the goal is a Zone that feels genuinely alive and holds together under complexity — the game's signature feature.
 
 # V4 — Reserved (expansion band)
 
