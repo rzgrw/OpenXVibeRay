@@ -7,7 +7,7 @@
 
 ## The pivot in one paragraph
 
-rz's decision (2026-07-05): **LLM agents ARE the world simulation**, built as persistent tool-using agents (the Claude Code / Codex pattern, our own harness), not a deterministic C++ sim. Authority inverts: **xrMind** (agent layer) owns the *evolution* of the off-screen Zone — factions, ecology, economy, events, named-individual arcs — at coarse/narrative granularity; **xrSim** shrinks to a thin C++ layer: a coarse authoritative state store, a near-player real-time executor (physics/combat/behavior trees at 30 Hz), and the materialization boundary between them. The LLM never touches per-NPC-per-tick; C++ never authors strategic change. The world *coasts* on the last agent-authored plan between wakes and never blocks. Honest costs: weaker determinism (recovered only via recorded tool-calls), effectively online for the headline feature (deterministic shadow when offline), and ~$3-8/wall-hour of model spend — all detailed below.
+rz's decision (2026-07-05): **LLM agents ARE the world simulation**, built as persistent tool-using agents (the Claude Code / Codex pattern, our own harness), not a deterministic C++ sim. Authority inverts: **xrMind** (agent layer) owns the *evolution* of the off-screen Zone — factions, ecology, economy, events, named-individual arcs — at coarse/narrative granularity; **xrSim** shrinks to a thin C++ layer: a coarse authoritative state store, a near-player real-time executor (physics/combat/behavior trees at 30 Hz), and the materialization boundary between them. The LLM never touches per-NPC-per-tick; C++ never authors strategic change. The world *coasts* on the last agent-authored plan between wakes and never blocks. Honest costs: weaker determinism (recovered only via recorded tool-calls), effectively online for the headline feature (offline = a **thin freeze-and-coast**, not a shadow sim; local compute stays reserved for the renderer), and ~$3-8/wall-hour of model spend — all detailed below.
 
 
 > **Verified model/pricing facts (from the claude-api skill) used in the cost model below:**
@@ -64,7 +64,7 @@ The rest of this brief is opinionated. Where the six fragments and the critique 
 
 **What it costs (the honest ledger):**
 - **Determinism is weaker.** A live run is not reproducible from seed alone — only from *recorded agent tool-calls* (§7). This is the single biggest regression versus the pure-C++ sim.
-- **The game is effectively online for its headline feature.** Offline, it degrades to a deterministic shadow that is a *different, quieter game* (§5, §8). This is a product constraint, not a bug — and the critique is right that we must build the shadow to be fun on its own, not stub it.
+- **The game is effectively online for its headline feature, and offline is deliberately THIN** (rz, 2026-07-05). When the provider is unreachable, the Zone's strategic *evolution* simply **freezes and coasts on its last authored plan** — the near-player C++ executor keeps running (you can move, fight, loot, survive), but the world stops *changing* until reconnect. We do **not** build a rich offline "second game," and we do **not** stand up a resident on-device LLM to fake it: **local compute — unified memory and GPU — is reserved for the renderer (RT, fidelity) and physics, which use it far better than a local model would.** Offline is a graceful pause of the living world, not a parallel simulation. (§5, §8)
 - **Real cost and latency.** Lively play is **$3-8/wall-hour** per player, not the $0.15 an L0-only estimate suggested (§5, resolving the critique's P0). The game must coast and never block.
 - **New engineering surface we own:** provider adapters, prompt-cache management, a budget ledger, record/replay, subagent lifecycle. More than calling an SDK — and all of it must be value-returning, never a THROW (Darwin `XRAY_EXCEPTIONS=0`).
 
@@ -217,12 +217,13 @@ Provider runs HTTP/SSE on the I/O thread; intents land in a **lock-free queue dr
 - **Task Budgets (beta, `task-budgets-2026-03-13`, min 20k tokens, Fable5/Sonnet5/Opus4.8/4.7):** surface a countdown so the model self-moderates a strategic wake. *Note: subscription-first only — not on Bedrock/Vertex/Foundry.*
 
 ### 5.7 Routing and degradation
-`route(snapshot, budget, provider_state, seed)` — a pure, replayable function:
+`route(snapshot, budget, provider_state, seed)` — a pure, replayable function. **Cloud-first; the cheap tier is a cheaper cloud model + caching/batching, not a resident local model** (rz 2026-07-05: don't spend unified memory/GPU on an on-device LLM — the renderer needs them more):
 - ZONE → Opus 4.8 (or Sonnet 5 in economy mode)
 - FACTION/REGION → Sonnet 5 when score>0.5, else Haiku 4.5
-- ECOLOGY + most NAMED wakes → on-device SLM (llama.cpp-Metal)
+- ECOLOGY + most NAMED wakes → Haiku 4.5, aggressively prompt-cached + Batch-API'd (50% off, latency-insensitive)
+- **On-device SLM: optional, small, off by default.** A tiny quantized model may back trivial flavor text on a hard-offline device, but it is never load-bearing and never sized to compete with the renderer for unified memory. If it's not there, the feature just isn't there offline.
 
-**Fixed skip order on budget/RPM exhaustion:** (1) skip L2 model calls → units coast on reflex; (2) skip cold L1s → those factions coast on last regional plan; (3) **never skip *applying* an already-committed L0 plan, only skip *recomputing* it.** Degrades LLM-alive → coasting → pure deterministic shadow, never stalled.
+**Fixed skip order on budget/RPM/offline exhaustion:** (1) skip L2 model calls → units coast on reflex; (2) skip cold L1s → those factions coast on last regional plan; (3) **never skip *applying* an already-committed L0 plan, only skip *recomputing* it.** Degrades LLM-alive → coasting → **strategic evolution frozen (thin)** — the near-player C++ executor keeps running so the game stays playable; the living world simply pauses until budget/connection returns. No rich offline shadow sim.
 
 ---
 
@@ -299,10 +300,10 @@ Since we can't THROW on Darwin, "watch-dogged" needs a hard stop: on any `sum(li
 **The four places a thin deterministic scaffold is retained (explicit answer to the critique):**
 1. **Near-player tactical loop** — squad/pack target selection, flee/flank, day/night — permanently C++ BT, LLM never on the frame-critical path. (§4.1)
 2. **Band-transition damping/hysteresis** — smoothing over agent-authored ecology bands so the world can't visibly flip-flop. (§6.4)
-3. **The deterministic shadow as a first-class offline *product*** — built and tuned to be fun standalone (stock-A-Life-plus-guardrails), not a stubbed safety net. Budget for it. The offline floor is a *different, quieter game*, and we ship two games and are honest that the marketing describes the online one. (below)
+3. **Offline is a THIN coast, not a scaffold to invest in** (rz 2026-07-05, revising the earlier "first-class shadow" call). When the provider is unreachable, the near-player C++ executor keeps running (move/fight/loot/survive) while the Zone's strategic evolution **freezes and coasts on its last plan** until reconnect. We deliberately do **not** build a rich offline second-game and do **not** host a resident on-device LLM — **local unified memory and GPU belong to the renderer and physics.** The offline floor is "playable but the living world is paused," and that is the intended, honest experience. (below)
 4. **Conservation + carrying-capacity + rate-limit guardrails** — the "arithmetic" C++ does while the LLM does "intent." Keep exactly as designed; it's the model. (§3.3, §6.3)
 
-**On the offline floor (resolving critique P1 online-outage):** a 1-4B on-device SLM cannot sustain a coherent NAMED_INDIVIDUAL persona across 40 hours of wakes. So the true offline floor is the deterministic shadow, not "the LLM world at lower quality." **Commit to measuring 7-8B vs 1-4B on persona coherence before Task 11** — it changes the unified-memory budget that competes with the Metal renderer.
+**On the offline floor (resolving critique P1 online-outage):** the true offline floor is a **thin freeze-and-coast**, not a local LLM world. This closes the earlier open question about shipping a 7-8B on-device model: **we don't** — a resident model that size would claim gigabytes of unified memory and GPU cycles the Metal renderer (RT, fidelity) uses far better. Any on-device SLM is optional, tiny, off by default, and never load-bearing. The living Zone is an online feature; offline you still have a fully playable STALKER, just with a world that holds its breath.
 
 ---
 
@@ -314,17 +315,17 @@ Since we can't THROW on Darwin, "watch-dogged" needs a hard stop: on any `sum(li
 - Materialization boundary reusing `switch_online/offline`; near-player C++ behavior trees; intent redirection via region-level objective fields.
 - AgentToolBus + snapshot + **replay gate as a CI blocker from day one** + determinism fuzzer.
 - Ecology: bands + guardrails + damping layer; deterministic shadow built to be fun.
-- Provider routing subscription-first (Opus 4.8 / Sonnet 5 / Haiku 4.5) + on-device SLM fallback + fixed skip order.
+- Provider routing subscription-first, **cloud-only** (Opus 4.8 / Sonnet 5 / Haiku 4.5); cheap tier = Haiku + prompt-cache + Batch API. Offline = thin freeze-and-coast (§5.7). No on-device model on the load-bearing path.
 - Bridge `agent.*` verbs.
 
 ### V3
-- Per-biome ECOLOGY subagents; richer NAMED_INDIVIDUAL micro-agents (identity+memory); larger resident SLM if 7-8B proves necessary; cap-scaling policy per hardware tier.
+- Per-biome ECOLOGY subagents; richer NAMED_INDIVIDUAL micro-agents (identity+memory); cap-scaling policy per hardware tier. (On-device models remain deliberately out of the local-compute budget — reserved for the renderer.)
 
 ### Top risks (from the critique), each resolved
 1. **Cost/rate-limit budget off ~10×** → rewrite envelope to L0+L1+L2 aggregate with explicit 15× factor ($3-8/hr); cap concurrent subagents to 2-3; RPM-aware wake scheduler; drop "subscription-covered" claim until measured. (§5.2-5.3)
 2. **Near-player combat feels broken on slow cadence** → hard invariant: no agent decision on a player-watched frame; delete the "player action wakes the agent" fast-path; region-level posture only. (§4.1)
 3. **Coarse counts + LLM narration = incoherent up close** → promote-on-contact aggressively; digest reports guardrail-adjusted state; band-transition damping. (§4.1, §3.3, §6.4)
-4. **Offline is a different game** → deterministic shadow is a first-class product; measure 7-8B vs 1-4B before Task 11. (§8)
+4. **Offline outage** → offline is a deliberately THIN freeze-and-coast (playable, world paused); no rich shadow, no resident on-device LLM — local compute reserved for the renderer/physics. (§8)
 5. **Replay gate load-bearing and fragile** → CI blocker from day one; total fixed-point firewall; record reads; SSE final-assembled-only; adversarial cross-agent-order test; determinism fuzzer. (§7.5)
 6. **LRU retires the tracked entity** → pin NAMED individuals referenced by active quest / recent interaction / proximity. (§2.5)
 7. **Silent conservation drift on Darwin** → always-on watchdog that quarantines + snapshot-reloads a region rather than logging and continuing. (§7.7)
