@@ -1,5 +1,7 @@
 # OpenXVibeRay — Version Roadmap (V1 → V5)
 
+> **⚠️ SUPERSEDED BY `2026-07-05-engine-roadmap-v2.md` (2026-07-05).** After a day of rapid pivots this document accumulated internal contradictions (Metal-era North Star/milestones/risks alongside the Vulkan and agentic-Zone revisions). It is retained as a historical index of the decisions; **the v2 document is the single plan of record** and the child specs (vulkan-renderer-roadmap, agentic-zone-design) are authoritative for their domains. Do not plan work from this file.
+
 **Date:** 2026-07-04 (rev. 2026-07-05 — restructured around rz's version vision + cutting-edge research)
 **Status:** Approved direction (rz)
 **Supersedes:** `2026-03-29-macos-metal-port-design.md` (absorbed as the V1 renderer bring-up)

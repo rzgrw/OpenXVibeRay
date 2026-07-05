@@ -1,0 +1,73 @@
+# OpenXVibeRay — Engine Roadmap v2 (Plan of Record)
+
+**Date:** 2026-07-05
+**Status:** THE plan of record. Supersedes `2026-07-04-engine-v2-roadmap.md` (now an index with a banner). Produced by a 4-reviewer implementation/consistency audit after the day's pivots; all P0/P1 findings are resolved in this document or in the accompanying commits.
+**Child specs (authoritative for their domain):**
+- Renderer: `2026-07-05-vulkan-renderer-roadmap.md` (Vulkan everywhere, Mac-first)
+- AI: `2026-07-05-agentic-zone-design.md` (xrMind agentic Zone; body wins over its appendix)
+- Surviving substrate: `2026-07-05-zone-simulation-design.md` (ids/validation/materialization invariants only)
+- Parked: SP2 Metal plan+spec (RT/TBDR insurance), seamless streaming
+- Done: agent bridge (`2026-07-04-agent-bridge-design.md`)
+
+## North Star
+
+A platform-agnostic rebuild of the X-Ray engine — **Vulkan renderer everywhere** (native Linux/Windows, MoltenVK on macOS; Mac primary-tuned, Mac-first execution), a **Zone simulated by LLM agents** (cloud-only, thin offline), and an engine a coding agent **drives and verifies itself** (agent bridge, shipped). The original engine is inspiration and foundation, not scripture.
+
+## Current truth (verified 2026-07-05)
+
+| Piece | State |
+|---|---|
+| GL renderer | **Working, default.** Heavily stabilized (exit hangs, signal safety, resolution, occlusion pause, error surfacing). The baseline to beat. |
+| Agent bridge | **Shipped.** `-agent_bridge` + `tools/agentctl.py`; soak = regression gate; `shot <name>` now honored by GL. |
+| Metal backend | **Parked.** Tasks 1–21 done (compiles+links, never rendered). `XRAY_METAL=OFF` default; kept as Mac RT/TBDR insurance. |
+| Vulkan renderer | **Not started.** `XRAY_VULKAN` option reserved; zero deps vendored yet. Next code milestone. |
+| Shader toolchain | glslang (GLSL→SPIR-V, Vulkan-native) + SPIRV-Cross (→MSL, Metal-only) vendored; now gated on renderer options — default builds don't pay for them. |
+| AI (agentic Zone) | Fully specced; implementation not started. |
+
+## Version ladder (unchanged)
+
+**V1** = Vulkan renderer (Mac-first → cross-platform) + agentic Zone AI + bridge · **V2** = polish/sharpen, retire GL + compat scaffolding · **V3** = AI maturation at scale · **V4** = reserved expansion · **V5** = Rust rewrite (long horizon).
+
+## V1 milestones (the ladder that replaces all earlier versions)
+
+**A0 — Agentic vertical slice on GL (parallel track, PROPOSED — rz to confirm).**
+The AI epic's riskiest unknowns (real $/wall-hour, RPM/429 behavior, LLM ecology coherence, replay-gate integrity) are renderer-agnostic and testable **today** on the working GL game via the bridge. A0 = `xrWorldState` store + `ToolDispatcher` + 1 ZONE + 1 ECOLOGY agent + record/replay + a `zonesoak` script. *Exit:* measured $/hr and req/min published; byte-identical replay green. Runs parallel to V-R0/V-R1 (zero shared code surface). If rz prefers strict renderer-first serialization, delete this milestone explicitly — that is a resourcing decision, not a default.
+
+**V-R0 — First Vulkan triangle (Mac/MoltenVK).**
+Vendor deps (see Dependencies below); `xrRenderVulkan` + `xrRenderPC_Vulkan` (`RENDER_NAMESPACE=render_vulkan`, `EXCLUDE_FROM_ALL`, `XRAY_VULKAN=OFF` until this exits, then default ON); SDL2 Vulkan surface; instance/device/swapchain via vk-bootstrap (value-returning — fits `XRAY_EXCEPTIONS=0`); timeline-semaphore + sync2 from day one; clear + triangle via dynamic rendering; runtime glslang compile (port the metalShaderCompiler front half, **bump to EShTargetVulkan_1_3 / SPIR-V 1.6**, persist a `VkPipelineCache`).
+*Exit:* triangle on Mac; validation + portability-subset clean; bridge `shot` captures it; **orientation verified against GL output** (see Convention decision).
+
+**V-R1 — CoC scene parity on Mac.**
+Port render phases onto dynamic rendering; SPIR-V reflection (own task — decoration-based, replaces MSL reflection); VMA with the topology-adaptive **zero-staging UMA path** from the first resource; SPIR-V optimizer/validation ON.
+*Exit (measured, not just recorded):* the **benchmark suite** (below) shows Vulkan **at/below GL frame time** on the same scenes; visual parity-or-better (target: the GL 4.1 shadow/lighting glitches fixed); zero staging allocations on Apple Silicon; bridge soak green on Vulkan; **Mac RT status review #1** (MoltenVK #1956 / forks / KosmicKrisp).
+
+**V-R2 — GPU-driven (Mac).**
+Bindless (descriptor indexing), draw-indirect-count, culling compute; A/B argument buffers on Apple Silicon; HDR/ProMotion presentation work item.
+*Exit:* benchmark suite shows Vulkan **strictly faster than GL** on all scenes (the V1 "faster" promise, measured); **Mac RT status review #2** — if MoltenVK RT is still dead and Mac RT remains a goal, **schedule Metal revival parallel with V-RX**.
+
+**V-RX — Port & verify (Linux, then Windows).**
+Native Vulkan builds; portability-subset gaps resolved; bridge + CI on both. May slip behind Mac-RT work per Mac-primary ranking.
+*Exit:* CoC + bridge parity on Linux & Windows. **THE single GL-retirement gate:** V-RX exit + benchmark green + one stabilization cycle. (Supersedes all earlier/conflicting GL-gate statements.)
+
+**V-R3 — Ray tracing (native PC first).**
+Full `VK_KHR` RT on NVIDIA/RADV/ANV; Mac RT via the parked Metal path if revived (see reviews above); caps-gated cleanly elsewhere.
+
+**A1+ — Agentic Zone build-out** (post-renderer, per the agentic-zone spec; A0 learnings folded in).
+
+## Normative decisions (binding; discovered by the review)
+
+1. **Clip-space convention:** `render_vulkan` uses **negative viewport height** (core ≥1.1, MoltenVK-supported) so the effective convention equals D3D/Metal. All `USE_METAL` convention branches gain `|| defined(USE_VULKAN)` **unchanged** — this is what makes the salvage claim true. V-R0 verifies orientation vs GL.
+2. **Benchmark suite:** N bridge-scripted scenes (same CoC level/settings/machine, `agentctl` frame-time capture) run on GL and Vulkan. It gates V-R1 (≤GL), V-R2 (<GL), and GL retirement. No perf claim enters the docs without it.
+3. **Backend screenshot contract:** `Screenshot(mode, name)` honors `name` (GL fixed; Vulkan/Metal must comply) — the bridge depends on it.
+4. **Dependency pinning:** pick ONE current LunarG SDK tag; pin glslang, SPIRV-Cross, Vulkan-Headers, volk, vk-bootstrap and the bundled MoltenVK to it (re-pin the existing 1.3.290.0 drops). New deps = pinned submodules; MoltenVK = prebuilt dylib + ICD JSON (document `VK_DRIVER_FILES` for dev runs). VMA gets one `VMA_IMPLEMENTATION` TU with the unity/PCH-skip idiom (the metal_cpp_impl lesson).
+5. **Metal keep-alive:** `XRAY_METAL=ON` compile is a pre-merge checklist item while shared `USE_METAL` files are being churned — the insurance path must not rot silently.
+6. **No on-device LLM is load-bearing anywhere in V1–V3** (thin-offline decision; agentic-zone body wins over its appendix).
+7. **Orphaned-goal owners:** temporal upscaling → V-R2+ decision (FSR-class cross-platform vs parked-Metal MetalFX vs cut); LLM dialogue → explicit in/out-of-V1 call in the AI epic before A1; HDR/ProMotion → V-R2; SPIR-V optimizer/validation → V-R1 exit; memory-budget eviction/streaming → V2 unless V-R2 profiling forces it; cost/RPM measurement → A0 exit; MoltenVK/KosmicKrisp re-check → every V-R phase entry.
+
+## Cleanup backlog (P2, non-blocking)
+
+Stale "SP2 Task N" comments across shared `r2_*`/`r3_*` files (reword to "parked Metal backend"); dead `USE_METAL` arms in shared `dxImGuiRender.cpp` (Metal uses a file replacement); `MTL::` casts leaking into shared `r2_rendertarget.cpp` (pattern hygiene before `vk*` equivalents copy it); appendix/body drift in older specs (bannered).
+
+## Top risks
+
+1. **MoltenVK is the primary path but a translation layer** — no RT, no tile-memory; mitigations: parked Metal insurance + keep-alive + standing status reviews. 2. **Perf promise unmeasured until the benchmark suite exists** — build it at V-R0/V-R1, not later. 3. **AI economics unknown** — A0 exists to measure before the big build. 4. **Single-developer fleet: three OSes** — Mac-first sequencing + V-RX as its own phase. 5. **Doc drift after rapid pivots** — this document is the single plan of record; children own detail; amendments update this file first.

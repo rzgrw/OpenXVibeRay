@@ -1,3 +1,5 @@
+> **⚠️ SUPERSEDED (2026-07-05).** This is the historical SP1→SP2 resume guide. The SP2 Metal renderer it plans as "next" was since **implemented (Tasks 1–21) and then PARKED** — the go-forward renderer is **Vulkan (Mac-first via MoltenVK)**. Current plan of record: `specs/2026-07-05-engine-roadmap-v2.md`. The SP1 history below remains accurate.
+
 # Viberay macOS Port — Continuation Guide
 
 ## Current State (2026-03-29)

@@ -117,7 +117,7 @@ The critique's P0 correctly caught that `agent-harness`'s "≤8 subagents" and `
 - **1 ZONE orchestrator** (always resident).
 - **≤2-3 concurrent live subagents total** (FACTION/REGION/ECOLOGY combined), not 8, not "8 per hot region." Everything else **coasts on its last committed plan** and is not a live wake.
 - **≤16 long-lived NAMED_INDIVIDUAL agents**, LRU-demoted to dormant records when off-screen and quiet — **except** any named individual referenced by an active quest, recent player interaction, or player proximity is **pinned** and exempt from demotion (resolving the critique's P2: LRU is the wrong policy for the entity the player is tracking).
-- On lower-end Apple Silicon, scale the concurrent-subagent cap to 1 and lean harder on coasting + the on-device SLM.
+- On lower-end Apple Silicon, scale the concurrent-subagent cap to 1 and scale the concurrent-subagent cap to 1 and lean harder on coasting (no on-device model is load-bearing).
 
 This is the difference between an affordable live world and a $12/hour one.
 
@@ -314,7 +314,7 @@ Since we can't THROW on Darwin, "watch-dogged" needs a hard stop: on any `sum(li
 - 1 ZONE orchestrator + 1 ECOLOGY agent; **≤2-3 concurrent subagents**; ≤16 NAMED with quest/proximity pinning.
 - Materialization boundary reusing `switch_online/offline`; near-player C++ behavior trees; intent redirection via region-level objective fields.
 - AgentToolBus + snapshot + **replay gate as a CI blocker from day one** + determinism fuzzer.
-- Ecology: bands + guardrails + damping layer; deterministic shadow built to be fun.
+- Ecology: bands + guardrails + damping layer; steady-state ecology coast per the thin-offline decision (§5.7/§8 — no rich shadow product).
 - Provider routing subscription-first, **cloud-only** (Opus 4.8 / Sonnet 5 / Haiku 4.5); cheap tier = Haiku + prompt-cache + Batch API. Offline = thin freeze-and-coast (§5.7). No on-device model on the load-bearing path.
 - Bridge `agent.*` verbs.
 
@@ -335,6 +335,8 @@ One factual correction folded into the routing table above: standardize on **Son
 ---
 
 # Appendix — detailed design fragments
+
+> **⚠️ RAW pre-synthesis fragments.** Where these conflict with the body (§§0–9), **the body wins** — notably: concurrent-subagent cap is **2–3** (not 8), **cloud-only / thin offline** (no llama.cpp-Metal fallback ladder, no on-device SLM as load-bearing), model id **claude-sonnet-5** (not Sonnet 4.6), harness naming **IAgentProvider/xrAgentRuntime** (not xrAIProvider).
 
 ## The Agentic Runtime Harness — the persistent, tool-using agent substrate that IS the Zone's world simulation (Claude Code / Codex agent pattern applied to a game world; harness owned by us, running against Claude/OpenAI models with on-device SLM fallback)
 

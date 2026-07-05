@@ -7,7 +7,7 @@
   <p>
     <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue" alt="Platforms" />
     <img src="https://img.shields.io/badge/macOS-Apple%20Silicon%20%E2%9C%93-000000?logo=apple" alt="Apple Silicon" />
-    <img src="https://img.shields.io/badge/renderer-OpenGL%20%E2%9C%93%20%7C%20Metal%20WIP-blue" alt="Renderer" />
+    <img src="https://img.shields.io/badge/renderer-OpenGL%20%E2%9C%93%20%7C%20Vulkan%20WIP%20(MoltenVK)-blue" alt="Renderer" />
     <img src="https://img.shields.io/badge/built%20with-Claude%20Code-blueviolet" alt="Built with Claude Code" />
   </p>
 </div>
@@ -45,11 +45,12 @@ These aren't surface-level patches — the XRAY_EXCEPTIONS fix required understa
 | Phase | Status | Description |
 |-------|--------|-------------|
 | **SP1: macOS Baseline** | Done | Engine builds and runs on macOS Apple Silicon with OpenGL |
-| **SP2: Metal Renderer** | Designed | Native Metal backend — metal-cpp, SPIRV-Cross shader pipeline, PSO cache |
+| **SP2: Metal Renderer** | Built & parked | Compiles+links (Tasks 1–21); kept as Mac RT/TBDR insurance. Superseded by the Vulkan plan |
+| **Vulkan Renderer** | Next (V-R0) | Platform-agnostic Vulkan (MoltenVK on macOS, Mac-first) — [plan](docs/superpowers/specs/2026-07-05-engine-roadmap-v2.md) |
 | **SP3: macOS Polish** | Planned | .app bundle, DMG installer, code signing, Retina support |
 | **Engine Improvements** | Ongoing | Fix bugs, improve stability, modernize code across all platforms |
 
-The Metal renderer design spec is complete ([read it here](docs/superpowers/specs/2026-03-29-macos-metal-port-design.md)). The approach: new `xrRenderMetal/` backend following the existing GL architecture, with SPIRV-Cross for automatic GLSL-to-MSL shader translation.
+The renderer direction is **Vulkan everywhere** (native on Linux/Windows, MoltenVK on macOS), executed Mac-first — see the [plan of record](docs/superpowers/specs/2026-07-05-engine-roadmap-v2.md). The earlier native-Metal backend was built to compile+link and is parked as the Mac ray-tracing/TBDR insurance path.
 
 But macOS is just the starting point. The long-term goal is proving that AI agents can systematically improve any part of this engine — rendering, physics, AI, networking, tooling — at a pace that wasn't previously feasible.
 
