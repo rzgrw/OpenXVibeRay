@@ -93,9 +93,13 @@ Full polish pass once V1 is functionally complete: eliminate obvious code and pr
 
 ---
 
-# V3 — Rust rewrite for extreme performance
+# V3 — Reserved (expansion band)
 
-Complete rewrite of the (now clean, well-understood) engine into Rust. Approach: incremental FFI-based migration (`cxx`/`bindgen`) starting from leaf/pure-logic subsystems (sim, math, asset pipeline) toward the graphics/FFI-heavy core; Metal via `metal-rs`; ECS for the sim. V1+V2 exist partly to *earn* this — a sharp C++ engine with clear module boundaries and a self-testing harness is the precondition for a safe rewrite, not a leap of faith.
+Deliberately open. V3 is the room between "sharp engine" (V2) and "extreme-performance rewrite" (V4) — the natural home for whatever the engine has earned the right to do by then: deeper graphics/AI advancement (mesh shaders, neural materials, richer LLM-driven simulation), broader content/mod tooling, or new game data support. Scope is intentionally undecided until V1/V2 land; not planned in detail yet.
+
+# V4 — Rust rewrite for extreme performance
+
+Complete rewrite of the (by-then clean, well-understood) engine into Rust — further out than originally numbered; this is a long-horizon goal, not a near-term one. Approach: incremental FFI-based migration (`cxx`/`bindgen`) starting from leaf/pure-logic subsystems (sim, math, asset pipeline) toward the graphics/FFI-heavy core; Metal via `metal-rs`; ECS for the sim. V1+V2 exist partly to *earn* this — a sharp C++ engine with clear module boundaries and a self-testing harness is the precondition for a safe rewrite, not a leap of faith.
 
 ---
 
