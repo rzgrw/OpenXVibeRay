@@ -37,12 +37,13 @@ Unix-socket control channel (`-agent_bridge`) — verbs `hello/cmd/lua/key/mouse
 
 **Big SP2 salvage:** the vendored **glslang GLSL→SPIR-V pipeline is Vulkan's native shader path** (drop only the SPIRV-Cross→MSL step); the `USE_METAL` shared-code ifdef branches become the `USE_VULKAN` template; the render-pass/pipeline/descriptor and RENDER_NAMESPACE patterns carry over. New backend pair: `xrRenderVulkan` (HAL) + `xrRenderPC_Vulkan` (`RENDER_NAMESPACE=render_vulkan`).
 
-Staged (details in the Vulkan spec):
-- **V-R0** — first triangle / clear on Vulkan on **all three OSes** via SDL2 (+MoltenVK on Mac). Deps: Vulkan-Headers/Loader, volk, vk-bootstrap, VMA; validation layers on for dev.
-- **V-R1** — native deferred core with `VK_KHR_dynamic_rendering` + descriptor indexing (bindless); full scene at/below GL.
-- **V-R2** — GPU-driven (draw-indirect-count, device-generated commands) + modern presentation; the "faster than GL" milestone.
+**Execution order: Mac-FIRST** (rz 2026-07-05). Bring Vulkan up on macOS-via-MoltenVK first, using the debug/run loop already built and proven on Mac (agent bridge + CoC setup); Linux/Windows are a dedicated port-&-verify phase (V-RX) after Mac reaches CoC-parity. MoltenVK enforces the Vulkan Portability Subset, so Mac→native-PC is the easy direction (subset→superset). Staged (details in the Vulkan spec):
+- **V-R0 (Mac)** — first triangle/clear on Vulkan via SDL2 + MoltenVK; volk/vk-bootstrap/VMA; validation + portability-subset clean; verified through the Mac agent bridge.
+- **V-R1 (Mac)** — deferred core (`VK_KHR_dynamic_rendering` + descriptor indexing) with the §5b zero-staging UMA path; CoC level at/below GL; bridge soak green.
+- **V-R2 (Mac)** — GPU-driven (bindless, draw-indirect-count, culling compute); the "faster than GL" milestone on Apple Silicon.
+- **V-RX** — port & verify on Linux then Windows; resolve portability gaps; agent bridge + CI on those OSes. **← GL deprecation gate** (Vulkan holds on all three).
 - **V-R3** — hybrid RT via `VK_KHR_ray_tracing` **native on Linux/Windows**; Mac RT only if MoltenVK lands AS support, else via the parked Metal fast-path.
-- Errors are **value-based** (no throw — `XRAY_EXCEPTIONS=0`). Verified cross-OS via the agent bridge (screenshot parity; Mac today, Linux/Windows CI later).
+- Errors are **value-based** (no throw — `XRAY_EXCEPTIONS=0`).
 
 ## Epic A — AI rehaul (LLM-backed, after the renderer)
 

@@ -164,23 +164,29 @@ Unified memory is a design pillar, not a Metal-only trick. Vulkan expresses it t
 
 ## 6. Phasing — V-R0 … V-R3 (replaces R1/R2/R3)
 
-**V-R0 — Bring-up & harness.**
-Add SDL2 Vulkan surface path (`Device_Initialize.cpp`); `xrRenderVulkan` + `xrRenderPC_Vulkan` targets; volk/VMA/vk-bootstrap wired; `renderer_vk` console verb; instance/device/swapchain with **timeline-semaphore + sync2 per-frame sync** from day one; clear-to-color + one triangle via dynamic rendering; glslang SPIR-V feeding `vkCreateShaderModule`.
-*Exit:* triangle renders on **Linux native + Mac/MoltenVK**; validation layers clean on both; AgentBridge `shot` produces a matching screenshot on each.
+> **Execution order: Mac-FIRST (rz 2026-07-05).** Vulkan-everywhere stays the *goal*, but we bring it up on **macOS-via-MoltenVK first**, using the debug/run loop we already built and proved on Mac (agent bridge, CoC run setup, the whole stabilization pass). Each Vulkan step is validated on Mac before we open the other platforms. Rationale: Mac is our only currently-runnable, fully-instrumented target — fighting three OSes at once would slow the rewrite; and MoltenVK enforces the **Vulkan Portability Subset**, so code that runs on Mac is a conservative *subset* of full Vulkan — porting Mac→native-Linux/Windows is the easy direction (subset→superset). We keep validation layers + `VK_KHR_portability_subset` checks on from day one so we never write Mac-only Vulkan by accident. Linux and Windows are a dedicated **"port & verify" phase (V-RX)** after the Mac renderer reaches CoC-parity, not a per-step burden. Per-phase exit gates below are **Mac-first**; the all-three-OS gate moves to V-RX.
 
-**V-R1 — Feature-parity forward/deferred (GL-equivalent scene).**
-Port the R2 render phases onto dynamic rendering + the adapted render-pass manager & PSO cache; SPIR-V-based reflection; VMA-managed resources with the **topology-adaptive zero-staging upload path (§5b)** in place from the first resource; load a CoC level and walk it.
-*Exit:* CoC level renders without crash on **Linux + Windows native + Mac/MoltenVK**; visual parity-or-better vs GL (Mac especially — target fixing the GL 4.1 shadow/lighting glitches); **Mac-primary on-device profiling** establishes the real perf baseline (no assumed numbers); **verify zero-staging uploads on Apple Silicon** (no staging buffers allocated; `vmaGetAllocationMemoryProperties` reports host-visible device-local for uploads) and staging-fallback exercised on a discrete-no-ReBAR PC GPU. **← GL DEPRECATION GATE:** once V-R1 exits on all three platforms, GL moves to reference-only; remove from default build path after one stabilization cycle.
+**V-R0 — Bring-up & harness (Mac).**
+Add SDL2 Vulkan surface path (`Device_Initialize.cpp`); `xrRenderVulkan` + `xrRenderPC_Vulkan` targets; volk/VMA/vk-bootstrap wired; MoltenVK vendored+bundled; `renderer_vk` console verb; instance/device/swapchain with **timeline-semaphore + sync2 per-frame sync** from day one; clear-to-color + one triangle via dynamic rendering; glslang SPIR-V feeding `vkCreateShaderModule`.
+*Exit (Mac):* triangle renders on **Mac/MoltenVK**; validation layers **and `VK_KHR_portability_subset`** clean; AgentBridge `shot` produces the screenshot — verified with the existing Mac run loop (CoC data, `agentctl.py`).
 
-**V-R2 — GPU-driven core.**
-Bindless (descriptor indexing / arg buffers), draw-indirect-count, culling compute. DGC as a **PC-only optional accelerator** that degrades to CPU-recorded draw-indirect on Mac. **A/B measure argument buffers on Apple Silicon** — do not assume bindless is a free win.
-*Exit:* GPU-driven path measurably ≥ V-R1 on Mac and PC; DGC path verified on ≥1 PC vendor; graceful degradation verified on Mac.
+**V-R1 — Feature-parity forward/deferred (Mac, GL-equivalent scene).**
+Port the R2 render phases onto dynamic rendering + the adapted render-pass manager & PSO cache; SPIR-V-based reflection; VMA-managed resources with the **topology-adaptive zero-staging upload path (§5b)** in place from the first resource; load a CoC level and walk it — driven through the agent-bridge soak.
+*Exit (Mac):* CoC level renders without crash on **Mac/MoltenVK**; visual parity-or-better vs GL (target fixing the GL 4.1 shadow/lighting glitches); **on-device profiling** establishes the real perf baseline (no assumed numbers); **zero-staging uploads verified on Apple Silicon** (no staging buffers; `vmaGetAllocationMemoryProperties` reports host-visible device-local); bridge soak (movement/save-load/UI/quit) green on Vulkan.
 
-**V-R3 — Ray tracing (PC-first, Mac caps-gated).**
+**V-R2 — GPU-driven core (Mac).**
+Bindless (descriptor indexing / argument buffers), draw-indirect-count, culling compute. **A/B measure argument buffers on Apple Silicon** — do not assume bindless is a free win. (Device-generated commands are a later PC-only accelerator, not built here.)
+*Exit (Mac):* GPU-driven path measurably ≥ V-R1 on Mac; bridge soak green.
+
+**V-RX — Port & verify: Linux, then Windows.**
+*Only after the Mac Vulkan renderer reaches CoC-parity (≥V-R1, ideally V-R2).* Stand up native Vulkan builds on Linux (native, arguably easier — no translation layer) then Windows; resolve portability-subset gaps (things MoltenVK forced that native Vulkan does differently); bring the agent bridge up on those OSes for CI. Because Mac was developed against the Portability Subset, this is the *easy direction* (subset→full). Add per-distro packaging (incl. Arch) + Windows SDK.
+*Exit:* CoC renders + bridge screenshot parity on **Linux + Windows native**. **← GL DEPRECATION GATE:** once Vulkan holds on all three, GL → reference-only; remove from default build after one stabilization cycle.
+
+**V-R3 — Ray tracing (PC-first, Mac caps-gated).** *(after V-RX — RT is native-PC and needs the PC ports first.)*
 Build the **full `VK_KHR` RT path (AS build + trace) on native PC** (NVIDIA / RADV / ANV all mature). AS/RT plumbing is greenfield — `SH_RT.h` today is a render-target (`CRT`), *not* acceleration structures. Ship Mac RT as a **caps-gated stub**.
 *Exit:* RT effects on ≥2 PC vendors; caps probe cleanly disables RT on Mac with no crash. **Mac RT is explicitly OUT of firm scope** pending: (a) upstream MoltenVK #1956, (b) a carried fork (re-verify pablode/MoltenVK-rayQuery first), or (c) **the Metal-target revival decision below.**
 
-**Cross-platform verification (every phase):** each exit gate requires a green AgentBridge screenshot run on **Linux + Windows + Mac**. CI on all three (see §7).
+**Verification:** Mac phases (V-R0…V-R2) gate on the existing Mac agent-bridge loop; V-RX adds Linux+Windows bridge/CI; from V-RX onward every gate requires green on all three.
 
 **Metal-target removal decision — deferred to end of V-R3, gated on three questions:**
 1. Did MoltenVK RT (#1956) land? 2. Is TBDR/memoryless a measured win worth a second Mac backend? 3. Is Mac RT a hard product requirement?
