@@ -2,7 +2,7 @@
 
 namespace xray::render::RENDER_NAMESPACE
 {
-bool xrRender_test_hw()
+BOOL xrRender_test_hw()
 {
     // Metal is available iff the system provides a default device
     // (any Apple Silicon Mac; Intel Macs with Metal-capable GPUs too).

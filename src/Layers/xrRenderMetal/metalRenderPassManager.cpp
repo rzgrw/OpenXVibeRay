@@ -368,6 +368,9 @@ MTL::RenderCommandEncoder* metalRenderPassManager::EnsureEncoder()
         m_encoder->retain();
         m_passWidth = width;
         m_passHeight = height;
+        // Publish the active encoder so per-draw resource binding (textures at
+        // CBackend::Render, and metal_bind_texture's other callers) can reach it.
+        HW.pCurrentRenderEncoder = m_encoder;
         ApplyViewportAndScissor(); // sticky state, re-applied per new encoder
         m_dirty = false;
     }
@@ -385,6 +388,7 @@ void metalRenderPassManager::EndEncoder()
     m_encoder->endEncoding();
     m_encoder->release();
     m_encoder = nullptr;
+    HW.pCurrentRenderEncoder = nullptr;
     m_passWidth = m_passHeight = 0;
     m_dirty = true;
 }

@@ -1,12 +1,18 @@
 #pragma once
 
 // metal-cpp must come FIRST: it pulls <objc/objc.h>, whose `typedef bool BOOL`
-// conflicts with the engine's `typedef int32_t BOOL` (PlatformApple.inl guards
-// its typedef on OBJC_BOOL_DEFINED, so Metal TUs use the ObjC definition).
+// (1 byte) conflicts with the engine's `typedef int32_t BOOL` (4 bytes).
+// CRITICAL: the engine's 4-byte BOOL must win — X-Ray SERIALIZES structs
+// containing BOOL (xrP_BOOL in Properties.h, read raw from shaders.xr); a
+// 1-byte BOOL in this module desyncs every such stream (first hit: the
+// blender-library VERIFY at device create). Rename ObjC's BOOL out of the
+// way for the duration of the ObjC-runtime includes; ABI-identical (bool).
 // The ObjC convenience macros would break luabind (`nil`) and engine code —
 // drop them; metal-cpp itself never uses them after this point.
+#define BOOL objc_darwin_BOOL
 #include <Metal/Metal.hpp>
 #include <QuartzCore/QuartzCore.hpp>
+#undef BOOL
 #undef nil
 #undef Nil
 #undef YES

@@ -119,9 +119,10 @@ inline int GetExceptionCode()
 inline void convert_path_separators(char * path);
 
 #include <inttypes.h>
-#ifndef OBJC_BOOL_DEFINED // Metal TUs include <objc/objc.h> first; its BOOL wins there
+// NOTE: Metal TUs rename ObjC's `typedef bool BOOL` to objc_darwin_BOOL
+// (xrRenderPC_Metal/stdafx.h) so this 4-byte BOOL is authoritative in ALL
+// TUs — X-Ray serializes structs containing BOOL; the size must not vary.
 typedef int32_t BOOL;
-#endif
 typedef uint16_t WORD;
 typedef uint32_t DWORD;
 typedef int32_t LONG;

@@ -9,6 +9,7 @@
 #include "metalHW.h"
 #include "metalRenderPassManager.h"
 #include "metalOcclusionQuery.h"
+#include "metalScreenshot.h"
 #include "xrEngine/XR_IOConsole.h"
 
 #include <SDL_metal.h>
@@ -233,7 +234,18 @@ void CHW::EndScene()
     if (RImplementation.Target)
         RImplementation.Target->phase_flip();
 
+    // Deferred screenshot: the drawable now holds the finished frame. Record the
+    // readback blit on this still-open command buffer, then (below) wait for it.
+    const bool capturing = MetalScreenshot_Pending();
+    if (capturing)
+        MetalScreenshot_RecordBlit(pCurrentCommandBuffer, pCurrentDrawable, pDevice);
+
     pCurrentCommandBuffer->commit();
+    if (capturing)
+    {
+        pCurrentCommandBuffer->waitUntilCompleted(); // screenshot frame only — not the steady path
+        MetalScreenshot_Finalize();
+    }
     pCurrentCommandBuffer->release();
     pCurrentCommandBuffer = nullptr;
 }

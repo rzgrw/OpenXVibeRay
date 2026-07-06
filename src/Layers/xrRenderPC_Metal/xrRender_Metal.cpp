@@ -14,7 +14,12 @@ namespace xray::render::RENDER_NAMESPACE
 // ("renderer renderer_metal"). This backend is the MAC renderer in the
 // dual-native strategy (Vulkan serves Linux/Windows) — see
 // specs/2026-07-05-engine-roadmap-v2.md. Becomes default-on at first-frame exit.
-constexpr pcstr RENDERER_METAL_MODE = "renderer_metal"; // R3 pipeline level (id 4)
+// Token id must be UNIQUE across backends: the `renderer` console var is a
+// name<->id token map, so a shared id makes the reverse lookup return the wrong
+// backend's name (GL's renderer_r3 also used 4, silently selecting GL). GL uses
+// 2-6; Metal takes 7. The id is only a config identifier — the R3 pipeline
+// level is set in SetupEnv, not derived from it.
+constexpr pcstr RENDERER_METAL_MODE = "renderer_metal"; // token id 7
 
 class RMetalRendererModule final : public RendererModule
 {
@@ -37,7 +42,7 @@ public:
 
         if (CheckCanAddMode())
         {
-            modes.emplace_back(RENDERER_METAL_MODE, 4);
+            modes.emplace_back(RENDERER_METAL_MODE, 7);
         }
         return modes;
     }
