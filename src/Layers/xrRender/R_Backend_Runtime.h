@@ -125,7 +125,13 @@ IC void CBackend::set_Matrices(SMatrixList* matrix_list)
 IC void CBackend::set_Pass(SPass* P)
 {
     set_States(P->state);
-#if defined(USE_OGL) || defined(USE_METAL)
+#if defined(USE_OGL)
+    // Program pipelines are a GL-only concept. Metal resolves its PSO at draw
+    // time from the individual vs/ps handles (metalPipeline::GetOrCreatePSO),
+    // so it must always take the set_PS/set_VS path — SPass::pp is a placeholder
+    // there and is never non-null in a way set_PP can consume. (Taking the pp
+    // branch on Metal left vs/ps at 0, so every draw was dropped for lack of a
+    // pipeline — the M-R0 uniform-magenta bug.)
     if (P->pp)
         set_PP(P->pp);
     else

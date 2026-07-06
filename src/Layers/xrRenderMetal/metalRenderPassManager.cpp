@@ -10,6 +10,7 @@
 #include "Layers/xrRenderMetal/metalState.h"
 #include "Layers/xrRenderMetal/metalStateUtils.h"
 #include "Layers/xrRenderMetal/metalVertexInput.h"
+#include "Layers/xrRenderMetal/metalShaderCompiler.h" // MetalShaderRegistry::Function
 
 #if defined(USE_METAL)
 
@@ -582,10 +583,10 @@ static MTL::ColorWriteMask to_mtl_color_write_mask(u32 mask)
 MTL::RenderPipelineState* GetOrCreatePSO(uint64_t vs, uint64_t ps, SDeclaration* decl, metalState* state,
     u32 colorWriteMask, const uint64_t (&rt)[4], uint64_t zb)
 {
-    // vs/ps are reinterpret_cast MTL::Function* handles (Task 11 contract;
-    // populated by the shader cache, Task 16).  ps == 0 is legal for
-    // depth-only passes (shadow maps) — Metal allows a null fragment function
-    // when no color attachment is bound.
+    // vs/ps are MetalShaderRegistry handles (index+1; populated by the shader
+    // cache, Task 16), resolved to MTL::Function* below via the registry.
+    // ps == 0 is legal for depth-only passes (shadow maps) — Metal allows a
+    // null fragment function when no color attachment is bound.
     VERIFY2(vs, "metalPipeline::GetOrCreatePSO: no vertex shader bound");
     if (!vs)
         return nullptr;
@@ -610,10 +611,17 @@ MTL::RenderPipelineState* GetOrCreatePSO(uint64_t vs, uint64_t ps, SDeclaration*
     // --- cache miss: build the pipeline ------------------------------------
     VERIFY(HW.pDevice);
 
+    // vs/ps are MetalShaderRegistry handles (index+1), NOT MTL::Function*
+    // pointers — resolve them through the registry. (Casting the handle
+    // straight to a pointer fed 0x3 to setVertexFunction: → SIGSEGV.)
+    MTL::Function* vsFn = MetalShaderRegistry::Function(vs);
+    MTL::Function* psFn = ps ? MetalShaderRegistry::Function(ps) : nullptr;
+    VERIFY2(vsFn, "metalPipeline: vertex shader handle did not resolve to a function");
+
     MTL::RenderPipelineDescriptor* desc = MTL::RenderPipelineDescriptor::alloc()->init();
-    desc->setVertexFunction(reinterpret_cast<MTL::Function*>(vs));
-    if (ps)
-        desc->setFragmentFunction(reinterpret_cast<MTL::Function*>(ps));
+    desc->setVertexFunction(vsFn);
+    if (psFn)
+        desc->setFragmentFunction(psFn);
     if (decl && decl->dcl)
         desc->setVertexDescriptor(reinterpret_cast<MTL::VertexDescriptor*>(decl->dcl));
 

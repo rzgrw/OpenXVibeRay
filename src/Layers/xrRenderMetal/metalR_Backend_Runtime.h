@@ -380,9 +380,10 @@ ICF void CBackend::Render(D3DPRIMITIVETYPE T, u32 baseV, u32 startV, u32 countV,
     encoder->setStencilReferenceValue(stencil_ref);
 
     // Rasterizer state is imperative in Metal — apply per draw (cheap).
-    // ToMTLCullMode maps D3DCULL_CW->Back / D3DCULL_CCW->Front, which assumes
-    // counter-clockwise front faces; make that explicit on the encoder.
-    encoder->setFrontFacingWinding(MTL::WindingCounterClockwise);
+    // X-Ray authors CLOCKWISE front faces (DX11: FrontCounterClockwise=FALSE),
+    // and ToMTLCullMode mirrors DX11's CW->Front / CCW->Back mapping. Both must
+    // agree or every triangle is culled.
+    encoder->setFrontFacingWinding(MTL::WindingClockwise);
     encoder->setCullMode(metalStateUtils::ToMTLCullMode(cull_mode));
     encoder->setTriangleFillMode(metalStateUtils::ToMTLFillMode(fill_mode));
 
@@ -435,7 +436,7 @@ ICF void CBackend::Render(D3DPRIMITIVETYPE T, u32 startV, u32 PC)
         encoder->setDepthStencilState(state->GetDepthStencilState());
     encoder->setStencilReferenceValue(stencil_ref);
 
-    encoder->setFrontFacingWinding(MTL::WindingCounterClockwise);
+    encoder->setFrontFacingWinding(MTL::WindingClockwise); // X-Ray authors CW front faces
     encoder->setCullMode(metalStateUtils::ToMTLCullMode(cull_mode));
     encoder->setTriangleFillMode(metalStateUtils::ToMTLFillMode(fill_mode));
 
