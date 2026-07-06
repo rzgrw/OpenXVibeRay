@@ -79,10 +79,13 @@ Verbs: `hello/cmd/lua/key/mouse/state/shot/bye`. The soak (movement, save/load, 
 - Parked/superseded (banners inside say so): old 07-04 roadmap, zone-simulation (deterministic parts), seamless streaming, `CONTINUATION.md`. The SP2 Metal plan is **REVIVED** (Tasks 22–24 active).
 - `docs/macos-dev-setup.md` — build/run + agent bridge usage
 
-## Current State (2026-07-05)
+## Current State (2026-07-06)
 
+> **Start here: [`docs/HANDOVER.md`](docs/HANDOVER.md)** — full handover (renderer status, build/run/test, Metal resume guide, AI phase).
+
+- **Direction (2026-07-06):** **OpenGL is the working runtime; the active focus is the AI rehaul built on top of GL.** The native-renderer rewrite is paused.
 - **Engine stabilization:** complete — exit hangs, signal safety, resolution handling, GL error surfacing all fixed; bridge soak green.
-- **Agent bridge:** shipped and proven.
-- **Metal backend (Mac renderer):** Tasks 1–21 done; **next code milestone = M-R0 first frame** (Tasks 22–24; entry point: blender VERIFY at device create).
-- **Vulkan renderer (PC):** follows — V-R0 triangle via MoltenVK dev vehicle (deps not yet vendored).
-- **AI (agentic Zone):** fully specced, starts after the renderer.
+- **Agent bridge:** shipped and proven (the AI-work verification harness).
+- **Metal backend (Mac renderer):** M-R0 done (menu renders — PR #9); M-R1 (in-game) parked mid-flight on `feat/metal-mr1-ingame` — resume guide in the handover.
+- **Vulkan renderer (PC):** not started.
+- **AI (agentic Zone):** the next focus — spec `docs/superpowers/specs/2026-07-05-agentic-zone-design.md`, developed on the GL runtime.
