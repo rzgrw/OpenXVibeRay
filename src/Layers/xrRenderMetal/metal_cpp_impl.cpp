@@ -14,6 +14,10 @@
 #define CA_PRIVATE_IMPLEMENTATION
 #define MTL_PRIVATE_IMPLEMENTATION
 
+// Keep ObjC's 1-byte BOOL out of the engine's namespace (see stdafx.h —
+// the engine's serialized structs require the 4-byte int32_t BOOL).
+#define BOOL objc_darwin_BOOL
 #include <Foundation/Foundation.hpp>
 #include <QuartzCore/QuartzCore.hpp>
 #include <Metal/Metal.hpp>
+#undef BOOL

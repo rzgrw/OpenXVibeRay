@@ -88,9 +88,12 @@ MTL::CullMode ToMTLCullMode(u32 d3dCull)
 {
     switch (d3dCull)
     {
+    // Match DX11 (dx11StateUtils.cpp ConvertCullMode): with CW front faces,
+    // D3DCULL_CW culls FRONT and D3DCULL_CCW culls BACK. (Was inverted, which
+    // — compounded with the CCW winding below — culled every X-Ray triangle.)
     case D3DCULL_NONE: return MTL::CullModeNone;
-    case D3DCULL_CW:   return MTL::CullModeBack;
-    case D3DCULL_CCW:  return MTL::CullModeFront;
+    case D3DCULL_CW:   return MTL::CullModeFront;
+    case D3DCULL_CCW:  return MTL::CullModeBack;
     default:
         VERIFY(!"ToMTLCullMode: unexpected cull mode");
         return MTL::CullModeNone;
