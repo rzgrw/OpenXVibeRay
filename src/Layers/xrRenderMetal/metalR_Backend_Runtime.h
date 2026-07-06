@@ -397,12 +397,22 @@ ICF void CBackend::Render(D3DPRIMITIVETYPE T, u32 baseV, u32 startV, u32 countV,
     // the encoder, so the actual bind is deferred to draw time — the same
     // reason constants.flush() is deferred. (textures_ps[i] -> fragment slot i,
     // textures_vs[i] -> vertex slot i.)
+    // Every SPIRV-Cross-generated function pairs each texture slot with a
+    // [[sampler(n)]] at the same index — a referenced-but-unbound sampler is
+    // undefined behaviour (it silently killed the whole gbuffer pass), so
+    // bind the default sampler with every texture.
     for (u32 ti = 0; ti < CTexture::mtMaxPixelShaderTextures; ++ti)
         if (textures_ps[ti])
+        {
             encoder->setFragmentTexture(reinterpret_cast<MTL::Texture*>(textures_ps[ti]->surface_get()), ti);
+            encoder->setFragmentSamplerState(HW.pDefaultSampler, ti);
+        }
     for (u32 ti = 0; ti < CTexture::mtMaxVertexShaderTextures; ++ti)
         if (textures_vs[ti])
+        {
             encoder->setVertexTexture(reinterpret_cast<MTL::Texture*>(textures_vs[ti]->surface_get()), ti);
+            encoder->setVertexSamplerState(HW.pDefaultSampler, ti);
+        }
 
     constants.flush();
 
@@ -448,12 +458,22 @@ ICF void CBackend::Render(D3DPRIMITIVETYPE T, u32 startV, u32 PC)
     // the encoder, so the actual bind is deferred to draw time — the same
     // reason constants.flush() is deferred. (textures_ps[i] -> fragment slot i,
     // textures_vs[i] -> vertex slot i.)
+    // Every SPIRV-Cross-generated function pairs each texture slot with a
+    // [[sampler(n)]] at the same index — a referenced-but-unbound sampler is
+    // undefined behaviour (it silently killed the whole gbuffer pass), so
+    // bind the default sampler with every texture.
     for (u32 ti = 0; ti < CTexture::mtMaxPixelShaderTextures; ++ti)
         if (textures_ps[ti])
+        {
             encoder->setFragmentTexture(reinterpret_cast<MTL::Texture*>(textures_ps[ti]->surface_get()), ti);
+            encoder->setFragmentSamplerState(HW.pDefaultSampler, ti);
+        }
     for (u32 ti = 0; ti < CTexture::mtMaxVertexShaderTextures; ++ti)
         if (textures_vs[ti])
+        {
             encoder->setVertexTexture(reinterpret_cast<MTL::Texture*>(textures_vs[ti]->surface_get()), ti);
+            encoder->setVertexSamplerState(HW.pDefaultSampler, ti);
+        }
 
     constants.flush();
 

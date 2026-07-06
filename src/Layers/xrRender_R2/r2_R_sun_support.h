@@ -24,10 +24,19 @@ inline void XRMatrixOrthoOffCenterLH(Fmatrix* pout, float l, float r, float b, f
     pout->identity();
     pout->m[0][0] = 2.0f / (r - l);
     pout->m[1][1] = 2.0f / (t - b);
-    pout->m[2][2] = 2.0f / (zf -zn);
     pout->m[3][0] = -1.0f -2.0f *l / (r - l);
     pout->m[3][1] = 1.0f + 2.0f * t / (b - t);
+#if defined(USE_METAL)
+    // Metal clips Z to [0..1] like D3D — use the D3D depth window
+    // (XMMatrixOrthographicOffCenterLH). The GL rows below map Z to [-1..1],
+    // which on Metal pushes half the light-space depth range out of the clip
+    // volume and skews the shadow depth reference.
+    pout->m[2][2] = 1.0f / (zf - zn);
+    pout->m[3][2] = zn / (zn - zf);
+#else
+    pout->m[2][2] = 2.0f / (zf -zn);
     pout->m[3][2] = (zn + zf) / (zn -zf);
+#endif
 }
 
 inline void XRMatrixInverse(Fmatrix* pout, float* pdeterminant, const Fmatrix& pm)

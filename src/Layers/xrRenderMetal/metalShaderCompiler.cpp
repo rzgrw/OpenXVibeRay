@@ -280,6 +280,17 @@ bool MetalShaderCompiler::CompileGLSLToMSL(pcstr name, pcstr const* sources,
         options.set_msl_version(2, 4); // macOS 12+, well below our 15.0 target
         msl.set_msl_options(options);
 
+        // Strip declared-but-unused stage inputs/outputs. The X-Ray iostruct
+        // headers declare interface supersets (e.g. p_flat.h declares a COLOR
+        // input several paired vertex shaders never write). GL links such
+        // pairs fine — unwritten varyings just read undefined — but Metal PSO
+        // validation hard-rejects any fragment stage_in the vertex stage
+        // doesn't produce, silently dropping every draw with that pair
+        // (M-R1: the entire static-level gbuffer pass). Restricting
+        // compilation to the ACTIVE interface set removes untouched
+        // declarations from the MSL [[stage_in]]/out structs on both stages.
+        msl.set_enabled_interface_variables(msl.get_active_interface_variables());
+
         const spirv_cross::ShaderResources resources = msl.get_shader_resources();
 
         if (stage == MetalShaderStage::Fragment)

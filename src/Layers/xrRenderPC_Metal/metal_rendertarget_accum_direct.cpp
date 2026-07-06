@@ -175,12 +175,19 @@ void CRenderTarget::accum_direct(CBackend& cmd_list, u32 sub_phase)
         //float			fBias				= (SE_SUN_NEAR==sub_phase)?ps_r2_sun_depth_near_bias:ps_r2_sun_depth_far_bias;
         //	TODO: DX11: Remove this when fix inverse culling for far region
         float fBias = (SE_SUN_NEAR == sub_phase) ? (-ps_r2_sun_depth_near_bias) : ps_r2_sun_depth_far_bias;
+        // Metal: top-left origin and [0..1] depth like D3D — DX-style matrix
+        // (Y = -0.5, Z = fRange/fBias). This file was copied from the GL twin,
+        // whose +0.5 Y / 0.5*fRange Z row compensates GL's bottom-left origin
+        // and [-1,1] depth window; on Metal that mirrored the sun shadow-map
+        // lookup and skewed the depth reference. Matches
+        // r4_rendertarget_accum_direct.cpp and the USE_METAL branch in
+        // r3_rendertarget_accum_spot.cpp.
         Fmatrix m_TexelAdjust =
         {
             0.5f, 0.0f, 0.0f, 0.0f,
-            0.0f, 0.5f, 0.0f, 0.0f,
-            0.0f, 0.0f, 0.5f * fRange, 0.0f,
-            0.5f, 0.5f, 0.5f + fBias, 1.0f
+            0.0f, -0.5f, 0.0f, 0.0f,
+            0.0f, 0.0f, fRange, 0.0f,
+            0.5f, 0.5f, fBias, 1.0f
         };
 
         // compute xforms
@@ -468,12 +475,14 @@ void CRenderTarget::accum_direct_cascade(CBackend& cmd_list, u32 sub_phase, Fmat
         // float			fBias				= (SE_SUN_NEAR==sub_phase)?ps_r2_sun_depth_near_bias:ps_r2_sun_depth_far_bias;
         //	TODO: DX11: Remove this when fix inverse culling for far region
         //		float			fBias				= (SE_SUN_NEAR==sub_phase)?(-ps_r2_sun_depth_near_bias):ps_r2_sun_depth_far_bias;
+        // Metal: D3D-style texel adjust (see the sub-phase site above) —
+        // matches r4_rendertarget_accum_direct.cpp accum_direct_cascade.
         Fmatrix m_TexelAdjust =
         {
             0.5f, 0.0f, 0.0f, 0.0f,
-            0.0f, 0.5f, 0.0f, 0.0f,
-            0.0f, 0.0f, 0.5f * fRange, 0.0f,
-            0.5f, 0.5f, 0.5f + fBias, 1.0f
+            0.0f, -0.5f, 0.0f, 0.0f,
+            0.0f, 0.0f, fRange, 0.0f,
+            0.5f, 0.5f, fBias, 1.0f
         };
 
         // compute xforms

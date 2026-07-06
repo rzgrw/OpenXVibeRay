@@ -659,8 +659,11 @@ MTL::RenderPipelineState* GetOrCreatePSO(uint64_t vs, uint64_t ps, SDeclaration*
 
     if (!pso)
     {
-        Msg("! [Metal] PSO creation failed (vs=%llx ps=%llx decl=%x state=%llx): %s",
-            vs, ps, key.declHash, key.stateHash,
+        const MetalShaderRegistry::Entry* vsE = MetalShaderRegistry::Get(vs);
+        const MetalShaderRegistry::Entry* psE = MetalShaderRegistry::Get(ps);
+        Msg("! [Metal] PSO creation failed (vs='%s' ps='%s' decl=%x state=%llx): %s",
+            vsE ? vsE->name.c_str() : "?", psE ? psE->name.c_str() : "?",
+            key.declHash, key.stateHash,
             (error && error->localizedDescription()) ? error->localizedDescription()->utf8String()
                                                      : "unknown error");
     }

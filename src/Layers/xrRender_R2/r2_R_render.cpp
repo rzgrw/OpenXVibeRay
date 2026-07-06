@@ -49,7 +49,9 @@ void CRender::RenderMenu()
     p1.set((_w + .5f) / _w, (_h + .5f) / _h);
 
     FVF::TL* pv = (FVF::TL*)RImplementation.Vertex.Lock(4, Target->g_menu->vb_stride, Offset);
-#if defined(USE_DX11)
+#if defined(USE_DX11) || defined(USE_METAL)
+    // Metal takes the DX11 quad: stub_notransform_t_menu.vs Y-negates under
+    // SM_METAL (top-left-origin RTs), same as every other fullscreen stub.
     pv->set(EPS, float(_h + EPS), d_Z, d_W, C, p0.x, p1.y);
     pv++;
     pv->set(EPS, EPS, d_Z, d_W, C, p0.x, p0.y);
@@ -57,21 +59,6 @@ void CRender::RenderMenu()
     pv->set(float(_w + EPS), float(_h + EPS), d_Z, d_W, C, p1.x, p1.y);
     pv++;
     pv->set(float(_w + EPS), EPS, d_Z, d_W, C, p1.x, p0.y);
-    pv++;
-#elif defined(USE_METAL)
-    // Metal render targets are top-left origin, but stub_notransform_t_menu.vs
-    // (a GL shader reused by the Metal backend) omits the Y-negate the other
-    // fullscreen VS carry — so the raw DX11 quad composites upside down. Flip
-    // the quad's Y (keeping texcoords) to bring it upright; the mirror also
-    // restores the front-facing winding, so the menu-wide CULL_CCW no longer
-    // culls it. (M-R1: fold this into per-backend shader Y handling.)
-    pv->set(EPS, EPS, d_Z, d_W, C, p0.x, p1.y);
-    pv++;
-    pv->set(EPS, float(_h + EPS), d_Z, d_W, C, p0.x, p0.y);
-    pv++;
-    pv->set(float(_w + EPS), EPS, d_Z, d_W, C, p1.x, p1.y);
-    pv++;
-    pv->set(float(_w + EPS), float(_h + EPS), d_Z, d_W, C, p1.x, p0.y);
     pv++;
 #elif defined(USE_OGL)
     pv->set(EPS, EPS, d_Z, d_W, C, p0.x, p0.y);

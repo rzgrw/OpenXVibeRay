@@ -256,6 +256,13 @@ HRESULT CRender::shader_compile(pcstr name, IReader* fs, pcstr pFunctionName,
     // rules (see metalShaderCompiler.cpp) — keep the GL version directive.
     options.add("#version 410");
 
+    // Metal-identifying macro for the GLSL sources: Metal render targets are
+    // top-left origin with [0..1] depth (D3D convention), so the shaders'
+    // GL-only Y-flips (fullscreen-stub HPos.y, gbuffer sampling flips in
+    // ssr.h, ...) take the D3D form under SM_METAL. Constant for the whole
+    // backend, so it does NOT append to sh_name; GL never defines it.
+    options.add("SM_METAL", "1");
+
 #ifdef DEBUG
     options.add("#pragma optimize (off)");
     sh_name.append(0u);

@@ -133,7 +133,7 @@ void render_sun_old::render_sun()
         Fbox& bb = frustum_bb;
         bb.grow(EPS);
 
-        mdir_Project = glm::ortho(bb.vMin.x, bb.vMax.x, bb.vMin.y, bb.vMax.y,
+        mdir_Project = glm::orthoZO(bb.vMin.x, bb.vMax.x, bb.vMin.y, bb.vMax.y,
                                   bb.vMin.z - tweak_ortho_xform_initial_offs, bb.vMax.z);
 
         // full-xform
@@ -255,7 +255,7 @@ void render_sun_old::render_sun()
             frustumBox = BoundingBox(frustumPnts, POINTS_NUM);
         }
 
-        glm::mat4 lightSpaceOrtho = glm::ortho(frustumBox.minPt.x, frustumBox.maxPt.x,
+        glm::mat4 lightSpaceOrtho = glm::orthoZO(frustumBox.minPt.x, frustumBox.maxPt.x,
                                                frustumBox.minPt.y, frustumBox.maxPt.y,
                                                min_z, max_z);
 
@@ -611,7 +611,7 @@ void render_sun_old::render_sun_near()
         }
         Fbox& bb = frustum_bb;
         bb.grow(EPS);
-        mdir_Project = glm::ortho(bb.vMin.x, bb.vMax.x, bb.vMin.y, bb.vMax.y,
+        mdir_Project = glm::orthoZO(bb.vMin.x, bb.vMax.x, bb.vMin.y, bb.vMax.y,
                                   bb.vMin.z - tweak_ortho_xform_initial_offs, bb.vMax.z);
 
         // build viewport xform

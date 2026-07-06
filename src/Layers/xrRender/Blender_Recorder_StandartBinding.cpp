@@ -68,7 +68,12 @@ class cl_texgen : public R_constant_setup
     {
         Fmatrix mTexgen;
 
-#if defined(USE_DX11)
+#if defined(USE_DX11) || defined(USE_METAL)
+        // Metal render targets are top-left origin like D3D — use the D3D
+        // texel adjust (Y = -0.5). Matches the USE_METAL branches in
+        // r2_rendertarget.cpp u_compute_texgen_screen and r2.cpp
+        // pos_decompression; grouping Metal with OGL here mirrored every
+        // m_texgen gbuffer lookup vertically.
         Fmatrix mTexelAdjust =
         {
             0.5f, 0.0f, 0.0f, 0.0f,
@@ -76,7 +81,7 @@ class cl_texgen : public R_constant_setup
             0.0f, 0.0f, 1.0f, 0.0f,
             0.5f, 0.5f, 0.0f, 1.0f
         };
-#elif defined(USE_OGL) || defined(USE_METAL)
+#elif defined(USE_OGL)
         Fmatrix mTexelAdjust =
         {
             0.5f, 0.0f, 0.0f, 0.0f,
@@ -100,7 +105,8 @@ class cl_VPtexgen : public R_constant_setup
     {
         Fmatrix mTexgen;
 
-#if defined(USE_DX11)
+#if defined(USE_DX11) || defined(USE_METAL)
+        // See cl_texgen above — Metal takes the D3D texel adjust (Y = -0.5).
         Fmatrix mTexelAdjust =
         {
             0.5f, 0.0f, 0.0f, 0.0f,
@@ -108,7 +114,7 @@ class cl_VPtexgen : public R_constant_setup
             0.0f, 0.0f, 1.0f, 0.0f,
             0.5f, 0.5f, 0.0f, 1.0f
         };
-#elif defined(USE_OGL) || defined(USE_METAL)
+#elif defined(USE_OGL)
         Fmatrix mTexelAdjust =
         {
             0.5f, 0.0f, 0.0f, 0.0f,

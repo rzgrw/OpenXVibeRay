@@ -104,6 +104,22 @@ void CHW::CreateDevice(SDL_Window* sdlWnd)
     // cost of the non-framebufferOnly path is negligible on Apple Silicon.
     pMetalLayer->setFramebufferOnly(false);
 
+    // Default sampler — see metalHW.h. Matches the GL backend's world-texture
+    // sampling (trilinear, wrap, anisotropic).
+    {
+        MTL::SamplerDescriptor* sd = MTL::SamplerDescriptor::alloc()->init();
+        sd->setMinFilter(MTL::SamplerMinMagFilterLinear);
+        sd->setMagFilter(MTL::SamplerMinMagFilterLinear);
+        sd->setMipFilter(MTL::SamplerMipFilterLinear);
+        sd->setSAddressMode(MTL::SamplerAddressModeRepeat);
+        sd->setTAddressMode(MTL::SamplerAddressModeRepeat);
+        sd->setRAddressMode(MTL::SamplerAddressModeRepeat);
+        sd->setMaxAnisotropy(8);
+        pDefaultSampler = pDevice->newSamplerState(sd);
+        sd->release();
+        R_ASSERT2(pDefaultSampler, "Metal: failed to create default sampler state");
+    }
+
     Caps.fTarget = D3DFMT_A8R8G8B8;
     Caps.fDepth  = D3DFMT_D24S8;
 
@@ -137,6 +153,11 @@ void CHW::DestroyDevice()
     }
 
     // Release Metal objects (newXxx / CreateXxx objects are owned by us)
+    if (pDefaultSampler)
+    {
+        pDefaultSampler->release();
+        pDefaultSampler = nullptr;
+    }
     if (pCommandQueue)
     {
         pCommandQueue->release();

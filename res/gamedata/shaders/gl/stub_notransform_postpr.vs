@@ -11,7 +11,11 @@ v2p_postpr _main ( v_postpr I )
 
 	I.P.xy += 0.5;
 	O.HPos.x = I.P.x * screen_res.z * 2.0 - 1.0;
+#ifdef SM_METAL
+	O.HPos.y = (I.P.y * screen_res.w * 2.0 - 1.0)*-1.0;	// Metal: top-left origin - D3D form (see stub_notransform_t.vs)
+#else
 	O.HPos.y = I.P.y * screen_res.w * 2.0 - 1.0;
+#endif
 	O.HPos.zw = I.P.zw;
 
 	O.Tex0 = I.Tex0;

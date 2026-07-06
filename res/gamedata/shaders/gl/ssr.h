@@ -1,4 +1,14 @@
 /*
+// SM_METAL: Metal gbuffer RTs are top-left-origin upright (D3D convention) -
+// the GL bottom-up sampling flips below become identity.
+#ifdef SM_METAL
+#define SSR_TC_Y(y) (y)
+#define SSR_TEXEL_Y(y) (y)
+#else
+#define SSR_TC_Y(y) (-(y))
+#define SSR_TEXEL_Y(y) (screen_res.y - (y))
+#endif
+
 	\\\\\\Screen Space Reflections//////
 
 Credits goes to Xerxes1138, Danil Baryshev, and ForHaxed.
@@ -106,13 +116,13 @@ float4 compute_ssr(float3 position, float3 normal, float3 skybox)
 		/*Sample hit depth*/
 	#ifndef SSR_HALF_DEPTH
 		#ifndef USE_MSAA
-			float hit_depth = tex2D(s_position, float2(refl_tc.x, -refl_tc.y)).z;
+			float hit_depth = tex2D(s_position, float2(refl_tc.x, SSR_TC_Y(refl_tc.y))).z;
 		#else
             float2 refl_tc_t = refl_tc.xy * screen_res.xy;
-			float hit_depth = texelFetch(s_position, int2(refl_tc_t.x, screen_res.y - refl_tc_t.y), 0).z;
+			float hit_depth = texelFetch(s_position, int2(refl_tc_t.x, SSR_TEXEL_Y(refl_tc_t.y)), 0).z;
 		#endif
 	#else
-			float hit_depth = tex2D(s_half_depth, float2(refl_tc.x, -refl_tc.y)).x;
+			float hit_depth = tex2D(s_half_depth, float2(refl_tc.x, SSR_TC_Y(refl_tc.y))).x;
 	#endif
 
 		/*Intersect sky from hit depth*/
@@ -134,7 +144,7 @@ float4 compute_ssr(float3 position, float3 normal, float3 skybox)
 
 	/*Sample image with reflected TC*/
     float2 refl_tc_tmp = refl_tc.xy * screen_res.xy;
-	float3 img = texelFetch(s_image, int2(refl_tc_tmp.x, screen_res.y - refl_tc_tmp.y), 0).xyz;
+	float3 img = texelFetch(s_image, int2(refl_tc_tmp.x, SSR_TEXEL_Y(refl_tc_tmp.y)), 0).xyz;
 
 	/*Image.rgb, Reflcontrol.a*/
 	return float4(img.xyz, edge);

@@ -71,11 +71,18 @@ public:
     // Owned/managed by the render-pass code (CBackend); consumers
     // (e.g. CTexture::apply_*) must tolerate nullptr.
     MTL::RenderCommandEncoder* pCurrentRenderEncoder = nullptr;
+    // Default sampler bound alongside every texture (SPIRV-Cross emits one
+    // [[sampler(n)]] per GLSL sampler2D; a referenced-but-unbound sampler is
+    // undefined behaviour on Metal — it silently broke every textured draw
+    // in M-R1 bring-up). Trilinear + wrap + anisotropy; per-stage D3DSAMP_*
+    // fidelity is a follow-up (M-R1 polish).
+    MTL::SamplerState*     pDefaultSampler = nullptr;
 #else
     void* pDevice        = nullptr;
     void* pCommandQueue  = nullptr;
     void* pMetalLayer    = nullptr;
     void* pCurrentRenderEncoder = nullptr;
+    void* pDefaultSampler = nullptr;
 #endif
 
     // SDL_MetalView handle (NSView* on macOS) — retained so we can destroy it
