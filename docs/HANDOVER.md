@@ -23,11 +23,11 @@ AI design spec (the active work): [`docs/superpowers/specs/2026-07-05-agentic-zo
 
 | Branch | State | Notes |
 |---|---|---|
-| `dev` | main line, GL working | base for the AI work |
-| `feat/metal-mr0-first-frame` | **PR [#9](https://github.com/rzgrw/OpenXVibeRay/pull/9)** (open, mergeable) | Metal renders the CoC main menu. GL/DX11 untouched. Safe to merge. |
-| `feat/metal-mr1-ingame` | committed WIP (`caa2e4953`), **not merged** | Metal deferred-pipeline foundation; in-game scene not yet rendering. Resume guide in §4. |
+| `dev` | main line, GL working; **M-R0 merged** (PR #9) + this handover | base for the AI work |
+| `feat/metal-mr0-first-frame` | **merged to dev** via PR [#9](https://github.com/rzgrw/OpenXVibeRay/pull/9) | Metal renders the CoC main menu. GL/DX11 untouched. |
+| `feat/metal-mr1-ingame` | pushed WIP (`caa2e4953`), **not merged** | Metal deferred-pipeline foundation; in-game scene not yet rendering. Resume guide in §4. Branched off the pre-merge M-R0 tip — rebase onto current `dev` when resuming. |
 
-The Metal branches are stacked: `dev` → `mr0-first-frame` → `mr1-ingame`. All Metal changes are `USE_METAL`/`SM_METAL`-gated, so **GL and DX11 output is unchanged** on every branch.
+All Metal changes are `USE_METAL`/`SM_METAL`-gated, so **GL and DX11 output is unchanged** on every branch.
 
 ---
 
