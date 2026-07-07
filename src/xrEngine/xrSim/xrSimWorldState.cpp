@@ -1,0 +1,189 @@
+#include "xrSim/xrSimWorldState.h"
+
+#include <algorithm>
+#include <cstdlib>
+
+namespace xrSim
+{
+namespace
+{
+constexpr uint32_t IndexMask = 0x00ffffffu;
+constexpr uint32_t GenerationShift = 24;
+
+Handle MakeHandle(uint32_t index, uint8_t generation)
+{
+    return Handle{ (uint32_t(generation) << GenerationShift) | (index & IndexMask) };
+}
+
+int32_t ClampPopulation(int32_t value, int32_t carryingCapacity)
+{
+    if (value < 0)
+        return 0;
+    if (value > carryingCapacity)
+        return carryingCapacity;
+    return value;
+}
+} // namespace
+
+Handle Handle::Invalid() { return Handle{}; }
+
+bool Handle::IsValid() const { return value != Invalid().value && Index() < IndexMask; }
+
+uint32_t Handle::Index() const { return value & IndexMask; }
+
+uint32_t Handle::Generation() const { return value >> GenerationShift; }
+
+bool operator==(Handle lhs, Handle rhs) { return lhs.value == rhs.value; }
+
+bool operator!=(Handle lhs, Handle rhs) { return !(lhs == rhs); }
+
+Handle WorldState::CreateRegion(const std::string& name, int32_t carryingCapacity)
+{
+    Region region;
+    region.name = name;
+    region.carryingCapacity = carryingCapacity < 0 ? 0 : carryingCapacity;
+    m_regions.push_back(region);
+    return MakeHandle(uint32_t(m_regions.size() - 1), region.generation);
+}
+
+Handle WorldState::CreateSpecies(const std::string& name)
+{
+    Species species;
+    species.name = name;
+    m_species.push_back(species);
+    return MakeHandle(uint32_t(m_species.size() - 1), species.generation);
+}
+
+Result WorldState::SetPopulation(Handle region, Handle species, int32_t count)
+{
+    const Region* regionRecord = FindRegion(region);
+    if (!regionRecord)
+        return Result{ false, 0, "unknown region" };
+    if (!FindSpecies(species))
+        return Result{ false, 0, "unknown species" };
+
+    Cohort* cohort = FindCohort(region, species);
+    if (!cohort)
+    {
+        m_cohorts.push_back(Cohort{ region, species, 0 });
+        cohort = &m_cohorts.back();
+    }
+
+    cohort->count = ClampPopulation(count, regionRecord->carryingCapacity);
+    return Result{ true, 0, "" };
+}
+
+Result WorldState::ApplyAdjustPopulation(uint32_t seq, Handle region, Handle species, int32_t delta, uint32_t gameDay)
+{
+    ToolRecord record;
+    record.seq = seq;
+    record.gameDay = gameDay;
+    record.region = region;
+    record.species = species;
+    record.requestedDelta = delta;
+
+    const Region* regionRecord = FindRegion(region);
+    if (!regionRecord)
+    {
+        record.reason = "unknown region";
+        m_toolLog.push_back(record);
+        return Result{ false, 0, record.reason };
+    }
+    if (!FindSpecies(species))
+    {
+        record.reason = "unknown species";
+        m_toolLog.push_back(record);
+        return Result{ false, 0, record.reason };
+    }
+
+    Cohort* cohort = FindCohort(region, species);
+    if (!cohort)
+    {
+        m_cohorts.push_back(Cohort{ region, species, 0 });
+        cohort = &m_cohorts.back();
+    }
+
+    const int32_t rateLimit = std::max<int32_t>(1, regionRecord->carryingCapacity / 10);
+    int32_t applied = delta;
+    if (applied > rateLimit)
+        applied = rateLimit;
+    if (applied < -rateLimit)
+        applied = -rateLimit;
+
+    const int32_t next = ClampPopulation(cohort->count + applied, regionRecord->carryingCapacity);
+    applied = next - cohort->count;
+    cohort->count = next;
+
+    record.accepted = true;
+    record.appliedDelta = applied;
+    m_toolLog.push_back(record);
+    return Result{ true, applied, "" };
+}
+
+int32_t WorldState::Population(Handle region, Handle species) const
+{
+    const Cohort* cohort = FindCohort(region, species);
+    return cohort ? cohort->count : 0;
+}
+
+const std::vector<ToolRecord>& WorldState::ToolLog() const { return m_toolLog; }
+
+std::string WorldState::Digest() const
+{
+    std::string out = "regions=" + std::to_string(m_regions.size()) + " species=" + std::to_string(m_species.size()) +
+        " cohorts=" + std::to_string(m_cohorts.size()) + " log=" + std::to_string(m_toolLog.size()) + " pop{";
+
+    for (size_t i = 0; i < m_cohorts.size(); ++i)
+    {
+        const Cohort& cohort = m_cohorts[i];
+        const Region* region = FindRegion(cohort.region);
+        const Species* species = FindSpecies(cohort.species);
+        if (i != 0)
+            out += ",";
+        out += region ? region->name : "?";
+        out += ":";
+        out += species ? species->name : "?";
+        out += "=";
+        out += std::to_string(cohort.count);
+    }
+
+    out += "}";
+    return out;
+}
+
+const WorldState::Region* WorldState::FindRegion(Handle handle) const
+{
+    if (!handle.IsValid() || handle.Index() >= m_regions.size())
+        return nullptr;
+    const Region& region = m_regions[handle.Index()];
+    return region.generation == handle.Generation() ? &region : nullptr;
+}
+
+const WorldState::Species* WorldState::FindSpecies(Handle handle) const
+{
+    if (!handle.IsValid() || handle.Index() >= m_species.size())
+        return nullptr;
+    const Species& species = m_species[handle.Index()];
+    return species.generation == handle.Generation() ? &species : nullptr;
+}
+
+WorldState::Cohort* WorldState::FindCohort(Handle region, Handle species)
+{
+    for (Cohort& cohort : m_cohorts)
+    {
+        if (cohort.region == region && cohort.species == species)
+            return &cohort;
+    }
+    return nullptr;
+}
+
+const WorldState::Cohort* WorldState::FindCohort(Handle region, Handle species) const
+{
+    for (const Cohort& cohort : m_cohorts)
+    {
+        if (cohort.region == region && cohort.species == species)
+            return &cohort;
+    }
+    return nullptr;
+}
+} // namespace xrSim
