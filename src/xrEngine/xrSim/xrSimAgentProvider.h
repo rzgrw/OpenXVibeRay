@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -93,10 +94,12 @@ public:
     explicit AnthropicAgentProviderShell(const AgentProviderConfig& config);
 
     void SetTransport(IAnthropicTransport* transport);
+    void SetOwnedTransport(std::unique_ptr<IAnthropicTransport> transport);
     AgentProviderResult Wake(const AgentWakeContext& context) override;
 
 private:
     AgentProviderConfig m_config;
+    std::unique_ptr<IAnthropicTransport> m_ownedTransport;
     IAnthropicTransport* m_transport = nullptr;
 };
 

@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <limits>
 #include <sstream>
+#include <utility>
 
 namespace xrSim
 {
@@ -149,7 +150,17 @@ AgentProviderResult NullAgentProvider::Wake(const AgentWakeContext& context)
 
 AnthropicAgentProviderShell::AnthropicAgentProviderShell(const AgentProviderConfig& config) : m_config(config) {}
 
-void AnthropicAgentProviderShell::SetTransport(IAnthropicTransport* transport) { m_transport = transport; }
+void AnthropicAgentProviderShell::SetTransport(IAnthropicTransport* transport)
+{
+    m_ownedTransport.reset();
+    m_transport = transport;
+}
+
+void AnthropicAgentProviderShell::SetOwnedTransport(std::unique_ptr<IAnthropicTransport> transport)
+{
+    m_ownedTransport = std::move(transport);
+    m_transport = m_ownedTransport.get();
+}
 
 AgentProviderResult AnthropicAgentProviderShell::Wake(const AgentWakeContext& context)
 {

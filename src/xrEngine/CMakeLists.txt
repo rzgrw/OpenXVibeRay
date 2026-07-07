@@ -1,8 +1,15 @@
 add_library(xrEngine)
 
+option(XRAY_AGENT_HTTP "Build live xrSim HTTP provider transport when libcurl is available" ON)
+if(XRAY_AGENT_HTTP)
+    find_package(CURL QUIET)
+endif()
+
 add_library(xrSimCore STATIC
     xrSim/xrSimAgentProvider.cpp
     xrSim/xrSimAgentProvider.h
+    xrSim/xrSimAnthropicTransport.cpp
+    xrSim/xrSimAnthropicTransport.h
     xrSim/xrSimBridge.cpp
     xrSim/xrSimBridge.h
     xrSim/xrSimNullAgent.cpp
@@ -20,6 +27,11 @@ target_include_directories(xrSimCore
 set_target_properties(xrSimCore PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
+
+if(XRAY_AGENT_HTTP AND CURL_FOUND)
+    target_compile_definitions(xrSimCore PRIVATE XRAY_AGENT_HTTP_CURL=1)
+    target_link_libraries(xrSimCore PUBLIC CURL::libcurl)
+endif()
 
 add_executable(xrSimWorldStateTests EXCLUDE_FROM_ALL
     xrSim/tests/xrSimWorldStateTests.cpp

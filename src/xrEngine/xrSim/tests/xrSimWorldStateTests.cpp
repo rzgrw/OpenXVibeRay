@@ -1,9 +1,11 @@
 #include "xrSim/xrSimAgentProvider.h"
+#include "xrSim/xrSimAnthropicTransport.h"
 #include "xrSim/xrSimWorldState.h"
 #include "xrSim/xrSimBridge.h"
 #include "xrSim/xrSimNullAgent.h"
 
 #include <cstdio>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -556,6 +558,22 @@ bool TestAnthropicProviderShellCoastsOnTransportFailure()
     return ok;
 }
 
+bool TestAnthropicHttpTransportFactoryMatchesAvailability()
+{
+    const bool available = xrSim::IsAnthropicHttpTransportAvailable();
+    const std::unique_ptr<xrSim::IAnthropicTransport> transport = xrSim::CreateAnthropicHttpTransport();
+
+    bool ok = Expect((transport != nullptr) == available, "anthropic transport factory matches availability");
+    const std::string description = xrSim::DescribeAnthropicHttpTransport();
+    ok = Expect(description == "curl" || description == "unavailable",
+        "anthropic transport description is stable") && ok;
+    if (available)
+        ok = Expect(description == "curl", "available anthropic transport reports curl") && ok;
+    else
+        ok = Expect(description == "unavailable", "unavailable anthropic transport reports unavailable") && ok;
+    return ok;
+}
+
 bool TestNullAgentWakeAppliesDeterministicIntent()
 {
     xrSim::WorldState state;
@@ -684,6 +702,7 @@ bool TestAgentBridgeAliases()
     ok = Expect(verbOk, "agent.provider live succeeds") && ok;
     ok = Expect(out.find("provider=anthropic") != std::string::npos, "agent.provider live reports provider") && ok;
     ok = Expect(out.find("model=claude-sonnet-5") != std::string::npos, "agent.provider live reports sonnet model") && ok;
+    ok = Expect(out.find("transport=") != std::string::npos, "agent.provider live reports transport") && ok;
 
     out = xrSim::HandleBridgeVerb("agent.prompt", "", verbOk);
     ok = Expect(verbOk, "agent.prompt succeeds") && ok;
@@ -729,6 +748,7 @@ int main()
     ok = TestAnthropicTextResponseParsesThroughAgentCodec() && ok;
     ok = TestAnthropicProviderShellUsesInjectedTransport() && ok;
     ok = TestAnthropicProviderShellCoastsOnTransportFailure() && ok;
+    ok = TestAnthropicHttpTransportFactoryMatchesAvailability() && ok;
     ok = TestNullAgentWakeAppliesDeterministicIntent() && ok;
     ok = TestBridgeDebugVerbs() && ok;
     ok = TestBridgeSnapshotVerbs() && ok;

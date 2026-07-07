@@ -1,5 +1,6 @@
 #include "xrSim/xrSimBridge.h"
 #include "xrSim/xrSimAgentProvider.h"
+#include "xrSim/xrSimAnthropicTransport.h"
 #include "xrSim/xrSimNullAgent.h"
 #include "xrSim/xrSimWorldState.h"
 
@@ -193,7 +194,8 @@ std::string HandleBridgeVerb(const std::string& verb, const std::string& payload
         EnsureDebugWorld();
         ok = true;
         if (payload == "live")
-            return DescribeAgentProviderConfig(LoadAgentProviderConfigFromEnvironment());
+            return DescribeAgentProviderConfig(LoadAgentProviderConfigFromEnvironment()) +
+                " transport=" + DescribeAnthropicHttpTransport();
         return "id=1 provider=null model=deterministic-null";
     }
 
