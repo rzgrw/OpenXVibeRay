@@ -1,5 +1,6 @@
 #include "xrSim/xrSimAgentProvider.h"
 #include "xrSim/xrSimAnthropicTransport.h"
+#include "xrSim/xrSimActuator.h"
 #include "xrSim/xrSimActorIntent.h"
 #include "xrSim/xrSimActors.h"
 #include "xrSim/xrSimWorldState.h"
@@ -321,6 +322,67 @@ bool TestAgentResponseParserAcceptsCoastAsNormalValue()
     bool ok = Expect(result.ok, "agent response parser accepts coast as normal value");
     ok = Expect(result.coast, "agent response parser marks coast") && ok;
     ok = Expect(result.intents.empty(), "agent response coast emits no intents") && ok;
+    return ok;
+}
+
+bool TestActuatorConvertsSquadIntentToCommands()
+{
+    xrSim::WorldState state;
+    state.CreateRegion("debug_region", 100);
+    state.CreateSpecies("blind_dog");
+
+    xrSim::ActorIntentPlan plan;
+    plan.goal = "survive_and_delay_player";
+    plan.stance = "cautious";
+    plan.durationMs = 3500;
+    plan.actions.push_back(xrSim::ActorAction{ "move_to", "cover_node_12", "", "", 0 });
+    plan.actions.push_back(xrSim::ActorAction{ "fire_pattern", "target_player", "burst_short", "", 0 });
+
+    const xrSim::ActuatorResult result =
+        xrSim::ExecuteActorIntent(state, xrSim::MakeDebugSquadAgent(), plan, 2);
+
+    bool ok = Expect(result.ok, "actuator accepts squad intent");
+    ok = Expect(result.commands.size() == 3, "actuator emits stance plus two commands") && ok;
+    if (result.commands.size() == 3)
+    {
+        ok = Expect(result.commands[0].verb == "set_stance", "actuator emits stance command") && ok;
+        ok = Expect(result.commands[1].verb == "move_to", "actuator emits move command") && ok;
+        ok = Expect(result.commands[2].arg0 == "burst_short", "actuator keeps fire pattern argument") && ok;
+    }
+    return ok;
+}
+
+bool TestActuatorRejectsIllegalPackVerbAsValue()
+{
+    xrSim::WorldState state;
+    xrSim::ActorIntentPlan plan;
+    plan.actions.push_back(xrSim::ActorAction{ "fire_pattern", "target_player", "burst_short", "", 0 });
+
+    const xrSim::ActuatorResult result =
+        xrSim::ExecuteActorIntent(state, xrSim::MakeDebugMutantPackAgent(), plan, 0);
+
+    bool ok = Expect(!result.ok, "actuator rejects illegal pack verb as value");
+    ok = Expect(result.reason.find("illegal action") != std::string::npos, "actuator explains illegal pack verb") && ok;
+    return ok;
+}
+
+bool TestActuatorAppliesPopulationToolThroughWorldState()
+{
+    xrSim::WorldState state;
+    const xrSim::Handle region = state.CreateRegion("debug_region", 100);
+    const xrSim::Handle species = state.CreateSpecies("blind_dog");
+    xrSim::Result setup = state.SetPopulation(region, species, 50);
+    bool ok = Expect(setup.ok, "actuator population setup accepts population");
+
+    xrSim::ActorIntentPlan plan;
+    plan.actions.push_back(xrSim::ActorAction{ "adjust_population", "debug_region", "blind_dog", "", 500 });
+
+    const xrSim::ActuatorResult result =
+        xrSim::ExecuteActorIntent(state, xrSim::MakeDebugMutantPackAgent(), plan, 4);
+
+    ok = Expect(result.ok, "actuator accepts population tool") && ok;
+    ok = Expect(result.appliedDelta == 10, "actuator applies clamped population delta") && ok;
+    ok = Expect(state.Population(region, species) == 60, "actuator mutates world state through validator") && ok;
     return ok;
 }
 
@@ -992,6 +1054,9 @@ int main()
     ok = TestAgentResponseParserAcceptsIntentLines() && ok;
     ok = TestAgentResponseParserRejectsUnknownIntentAsValue() && ok;
     ok = TestAgentResponseParserAcceptsCoastAsNormalValue() && ok;
+    ok = TestActuatorConvertsSquadIntentToCommands() && ok;
+    ok = TestActuatorRejectsIllegalPackVerbAsValue() && ok;
+    ok = TestActuatorAppliesPopulationToolThroughWorldState() && ok;
     ok = TestRecordedTextProviderParsesScriptedWake() && ok;
     ok = TestRuntimeCoastsOnProviderCoastResult() && ok;
     ok = TestAgentProviderConfigDefaultsToSonnetTier() && ok;

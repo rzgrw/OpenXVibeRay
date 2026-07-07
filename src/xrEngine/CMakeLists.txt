@@ -6,6 +6,8 @@ if(XRAY_AGENT_HTTP)
 endif()
 
 add_library(xrSimCore STATIC
+    xrSim/xrSimActuator.cpp
+    xrSim/xrSimActuator.h
     xrSim/xrSimActorIntent.cpp
     xrSim/xrSimActorIntent.h
     xrSim/xrSimActors.cpp
