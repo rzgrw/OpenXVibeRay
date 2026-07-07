@@ -267,6 +267,26 @@ bool TestBridgeNullAgentWakeVerb()
         "ai.wake updates observed digest") && ok;
     return ok;
 }
+
+bool TestAgentBridgeAliases()
+{
+    bool verbOk = false;
+    std::string out = xrSim::HandleBridgeVerb("ai.reset", "", verbOk);
+    bool ok = Expect(verbOk, "agent alias setup reset succeeds");
+
+    out = xrSim::HandleBridgeVerb("agent.list", "", verbOk);
+    ok = Expect(verbOk, "agent.list succeeds") && ok;
+    ok = Expect(out == "id=1 scope=ZONE provider=null wakes=0 state=ready", "agent.list reports null zone agent") && ok;
+
+    out = xrSim::HandleBridgeVerb("agent.wake", "1", verbOk);
+    ok = Expect(verbOk, "agent.wake succeeds") && ok;
+    ok = Expect(out == "xrsim wake applied_delta=5 wakes=1", "agent.wake maps to deterministic null wake") && ok;
+
+    out = xrSim::HandleBridgeVerb("agent.tree", "", verbOk);
+    ok = Expect(verbOk, "agent.tree succeeds") && ok;
+    ok = Expect(out == "ZONE#1 provider=null wakes=1 log=1", "agent.tree reports deterministic tree shape") && ok;
+    return ok;
+}
 } // namespace
 
 int main()
@@ -284,5 +304,6 @@ int main()
     ok = TestBridgeSnapshotVerbs() && ok;
     ok = TestBridgeReplayVerb() && ok;
     ok = TestBridgeNullAgentWakeVerb() && ok;
+    ok = TestAgentBridgeAliases() && ok;
     return ok ? 0 : 1;
 }

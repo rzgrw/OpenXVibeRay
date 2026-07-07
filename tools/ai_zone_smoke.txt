@@ -11,4 +11,7 @@ ai.observe
 ai.snapshot
 ai.log
 ai.replay
+agent.list
+agent.wake 1
+agent.tree
 cmd quit

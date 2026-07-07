@@ -91,6 +91,9 @@ class DryRunCliTests(unittest.TestCase):
         self.assertIn("ai.snapshot", commands)
         self.assertIn("ai.log", commands)
         self.assertIn("ai.replay", commands)
+        self.assertIn("agent.list", commands)
+        self.assertIn("agent.wake 1", commands)
+        self.assertIn("agent.tree", commands)
 
     def test_dry_run_writes_summary(self):
         from tools.gl_macos_soak import main

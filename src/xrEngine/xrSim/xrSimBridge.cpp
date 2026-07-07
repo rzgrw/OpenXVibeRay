@@ -102,6 +102,18 @@ std::string FormatToolLog()
     }
     return out.str();
 }
+
+std::string WakeNullAgent(bool& ok)
+{
+    EnsureDebugWorld();
+    const Result result = g_nullAgent.Wake(g_debugWorld, 0);
+    ok = result.ok;
+    if (!result.ok)
+        return result.reason;
+    g_nextSeq = uint32_t(g_debugWorld.ToolLog().size() + 1);
+    return "xrsim wake applied_delta=" + std::to_string(result.appliedDelta) +
+        " wakes=" + std::to_string(g_nullAgent.WakeCount());
+}
 } // namespace
 
 std::string HandleBridgeVerb(const std::string& verb, const std::string& payload, bool& ok)
@@ -131,16 +143,7 @@ std::string HandleBridgeVerb(const std::string& verb, const std::string& payload
         return InjectIntent(payload, ok);
 
     if (verb == "ai.wake")
-    {
-        EnsureDebugWorld();
-        const Result result = g_nullAgent.Wake(g_debugWorld, 0);
-        ok = result.ok;
-        if (!result.ok)
-            return result.reason;
-        g_nextSeq = uint32_t(g_debugWorld.ToolLog().size() + 1);
-        return "xrsim wake applied_delta=" + std::to_string(result.appliedDelta) +
-            " wakes=" + std::to_string(g_nullAgent.WakeCount());
-    }
+        return WakeNullAgent(ok);
 
     if (verb == "ai.snapshot")
     {
@@ -175,6 +178,31 @@ std::string HandleBridgeVerb(const std::string& verb, const std::string& payload
         if (!result.ok)
             return result.reason;
         return "xrsim replay digest=" + replay.Digest();
+    }
+
+    if (verb == "agent.list")
+    {
+        EnsureDebugWorld();
+        ok = true;
+        return "id=1 scope=ZONE provider=null wakes=" + std::to_string(g_nullAgent.WakeCount()) + " state=ready";
+    }
+
+    if (verb == "agent.wake")
+    {
+        if (!payload.empty() && payload != "1")
+        {
+            ok = false;
+            return "unknown agent id: " + payload;
+        }
+        return WakeNullAgent(ok);
+    }
+
+    if (verb == "agent.tree")
+    {
+        EnsureDebugWorld();
+        ok = true;
+        return "ZONE#1 provider=null wakes=" + std::to_string(g_nullAgent.WakeCount()) +
+            " log=" + std::to_string(g_debugWorld.ToolLog().size());
     }
 
     ok = false;
