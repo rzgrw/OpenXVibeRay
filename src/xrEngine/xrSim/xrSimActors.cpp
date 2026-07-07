@@ -1,11 +1,34 @@
 #include "xrSim/xrSimActors.h"
 
 #include <sstream>
+#include <string>
 
 namespace xrSim
 {
 namespace
 {
+std::string EscapeLineValue(const std::string& text)
+{
+    std::string out;
+    out.reserve(text.size());
+    for (const char ch : text)
+    {
+        if (ch == '\n')
+        {
+            out += "\\n";
+        }
+        else if (ch == '\r')
+        {
+            out += "\\r";
+        }
+        else
+        {
+            out += ch;
+        }
+    }
+    return out;
+}
+
 const char* LegalToolsForScope(ActorAgentScope scope)
 {
     switch (scope)
@@ -55,10 +78,10 @@ std::string BuildActorObservation(
     std::ostringstream out;
     out << "agent_id " << actor.agentId << "\n";
     out << "scope " << ActorScopeName(actor.scope) << "\n";
-    out << "name " << actor.name << "\n";
-    out << "memory_summary " << actor.memorySummary << "\n";
-    out << "situation " << situation << "\n";
-    out << "world_digest " << world.Digest() << "\n";
+    out << "name " << EscapeLineValue(actor.name) << "\n";
+    out << "memory_summary " << EscapeLineValue(actor.memorySummary) << "\n";
+    out << "situation " << EscapeLineValue(situation) << "\n";
+    out << "world_digest " << EscapeLineValue(world.Digest()) << "\n";
     out << "legal_tools " << LegalToolsForScope(actor.scope) << "\n";
     return out.str();
 }
