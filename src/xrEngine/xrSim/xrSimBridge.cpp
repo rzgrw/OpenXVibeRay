@@ -1,4 +1,5 @@
 #include "xrSim/xrSimBridge.h"
+#include "xrSim/xrSimAgentProvider.h"
 #include "xrSim/xrSimNullAgent.h"
 #include "xrSim/xrSimWorldState.h"
 
@@ -192,6 +193,17 @@ std::string HandleBridgeVerb(const std::string& verb, const std::string& payload
         EnsureDebugWorld();
         ok = true;
         return "id=1 provider=null model=deterministic-null";
+    }
+
+    if (verb == "agent.prompt")
+    {
+        EnsureDebugWorld();
+        AgentWakeContext context;
+        context.agentId = 1;
+        context.gameDay = 0;
+        context.observation = g_debugWorld.Digest();
+        ok = true;
+        return BuildAgentWakePrompt(context);
     }
 
     if (verb == "agent.wake")

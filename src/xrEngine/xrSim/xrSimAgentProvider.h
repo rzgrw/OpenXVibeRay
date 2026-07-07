@@ -55,4 +55,23 @@ private:
     std::vector<AgentProviderResult> m_script;
     size_t m_cursor = 0;
 };
+
+std::string BuildAgentWakePrompt(const AgentWakeContext& context);
+AgentProviderResult ParseAgentProviderResponse(
+    const std::string& text, const std::string& provider, const std::string& model);
+
+class RecordedTextAgentProvider : public IAgentProvider
+{
+public:
+    RecordedTextAgentProvider(
+        const std::string& provider, const std::string& model, const std::vector<std::string>& script);
+
+    AgentProviderResult Wake(const AgentWakeContext& context) override;
+
+private:
+    std::string m_provider;
+    std::string m_model;
+    std::vector<std::string> m_script;
+    size_t m_cursor = 0;
+};
 } // namespace xrSim
