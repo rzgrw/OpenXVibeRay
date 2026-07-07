@@ -104,6 +104,59 @@ bool TestSnapshotLoadRejectsBadVersionAsValue()
     return ok;
 }
 
+bool TestReplayToolLogReproducesRecordedDigest()
+{
+    xrSim::WorldState baseline;
+    const xrSim::Handle region = baseline.CreateRegion("debug_region", 100);
+    const xrSim::Handle species = baseline.CreateSpecies("blind_dog");
+    xrSim::Result result = baseline.SetPopulation(region, species, 50);
+    bool ok = Expect(result.ok, "replay baseline accepts valid population");
+
+    const std::string baselineSnapshot = baseline.SaveSnapshot();
+
+    xrSim::WorldState recorded;
+    result = recorded.LoadSnapshot(baselineSnapshot);
+    ok = Expect(result.ok, "replay recorded state loads baseline") && ok;
+    result = recorded.ApplyAdjustPopulation(1, region, species, 500, 7);
+    ok = Expect(result.ok, "replay recorded state accepts adjustment") && ok;
+
+    xrSim::WorldState replayed;
+    result = replayed.LoadSnapshot(baselineSnapshot);
+    ok = Expect(result.ok, "replay target loads baseline") && ok;
+    result = replayed.ReplayToolLogFrom(recorded);
+    ok = Expect(result.ok, "replay applies recorded log") && ok;
+    ok = Expect(replayed.Digest() == recorded.Digest(), "replay reproduces recorded digest") && ok;
+    ok = Expect(replayed.ToolLog().size() == recorded.ToolLog().size(), "replay reproduces log size") && ok;
+    ok = Expect(replayed.ToolLog().back().appliedDelta == recorded.ToolLog().back().appliedDelta,
+        "replay reproduces applied delta") && ok;
+    return ok;
+}
+
+bool TestReplayDetectsDivergentBaseline()
+{
+    xrSim::WorldState baseline;
+    const xrSim::Handle region = baseline.CreateRegion("debug_region", 100);
+    const xrSim::Handle species = baseline.CreateSpecies("blind_dog");
+    xrSim::Result result = baseline.SetPopulation(region, species, 50);
+    bool ok = Expect(result.ok, "divergent replay baseline accepts population");
+
+    xrSim::WorldState recorded;
+    result = recorded.LoadSnapshot(baseline.SaveSnapshot());
+    ok = Expect(result.ok, "divergent replay recorded loads baseline") && ok;
+    result = recorded.ApplyAdjustPopulation(1, region, species, 500, 7);
+    ok = Expect(result.ok, "divergent replay recorded accepts adjustment") && ok;
+
+    xrSim::WorldState divergent;
+    result = divergent.LoadSnapshot(baseline.SaveSnapshot());
+    ok = Expect(result.ok, "divergent replay target loads baseline") && ok;
+    result = divergent.SetPopulation(region, species, 95);
+    ok = Expect(result.ok, "divergent replay target mutates baseline") && ok;
+    result = divergent.ReplayToolLogFrom(recorded);
+    ok = Expect(!result.ok, "divergent replay fails as a value") && ok;
+    ok = Expect(result.reason.find("replay mismatch") != std::string::npos, "divergent replay explains mismatch") && ok;
+    return ok;
+}
+
 bool TestBridgeDebugVerbs()
 {
     bool verbOk = false;
@@ -161,6 +214,21 @@ bool TestBridgeSnapshotVerbs()
         "ai.restore recreates observed digest") && ok;
     return ok;
 }
+
+bool TestBridgeReplayVerb()
+{
+    bool verbOk = false;
+    std::string out = xrSim::HandleBridgeVerb("ai.reset", "", verbOk);
+    bool ok = Expect(verbOk, "bridge replay setup reset succeeds");
+    out = xrSim::HandleBridgeVerb("ai.inject", "adjust_population debug_region blind_dog 500", verbOk);
+    ok = Expect(verbOk, "bridge replay setup inject succeeds") && ok;
+
+    out = xrSim::HandleBridgeVerb("ai.replay", "", verbOk);
+    ok = Expect(verbOk, "ai.replay succeeds") && ok;
+    ok = Expect(out == "xrsim replay digest=regions=1 species=1 cohorts=1 log=1 pop{debug_region:blind_dog=60}",
+        "ai.replay reports reproduced digest") && ok;
+    return ok;
+}
 } // namespace
 
 int main()
@@ -171,7 +239,10 @@ int main()
     ok = TestDigestIsStable() && ok;
     ok = TestSnapshotRoundTripPreservesStateAndLog() && ok;
     ok = TestSnapshotLoadRejectsBadVersionAsValue() && ok;
+    ok = TestReplayToolLogReproducesRecordedDigest() && ok;
+    ok = TestReplayDetectsDivergentBaseline() && ok;
     ok = TestBridgeDebugVerbs() && ok;
     ok = TestBridgeSnapshotVerbs() && ok;
+    ok = TestBridgeReplayVerb() && ok;
     return ok ? 0 : 1;
 }

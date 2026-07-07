@@ -56,6 +56,7 @@ public:
     std::string Digest() const;
     std::string SaveSnapshot() const;
     Result LoadSnapshot(const std::string& snapshot);
+    Result ReplayToolLogFrom(const WorldState& recorded);
 
 private:
     struct Region

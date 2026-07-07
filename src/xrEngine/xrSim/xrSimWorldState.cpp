@@ -305,6 +305,25 @@ Result WorldState::LoadSnapshot(const std::string& snapshot)
     return Result{ true, 0, "" };
 }
 
+Result WorldState::ReplayToolLogFrom(const WorldState& recorded)
+{
+    for (const ToolRecord& expected : recorded.ToolLog())
+    {
+        if (std::string(expected.tool) != "adjust_population")
+            return Result{ false, 0, "unsupported replay tool" };
+
+        const Result actual =
+            ApplyAdjustPopulation(expected.seq, expected.region, expected.species, expected.requestedDelta, expected.gameDay);
+        if (actual.ok != expected.accepted || actual.appliedDelta != expected.appliedDelta)
+            return Result{ false, actual.appliedDelta, "replay mismatch" };
+    }
+
+    if (Digest() != recorded.Digest())
+        return Result{ false, 0, "replay mismatch digest" };
+
+    return Result{ true, 0, "" };
+}
+
 const WorldState::Region* WorldState::FindRegion(Handle handle) const
 {
     if (!handle.IsValid() || handle.Index() >= m_regions.size())

@@ -28,6 +28,15 @@ void EnsureDebugWorld()
         ResetDebugWorld();
 }
 
+WorldState MakeDebugBaseline()
+{
+    WorldState baseline;
+    const Handle region = baseline.CreateRegion("debug_region", 100);
+    const Handle species = baseline.CreateSpecies("blind_dog");
+    baseline.SetPopulation(region, species, 50);
+    return baseline;
+}
+
 std::string InjectIntent(const std::string& payload, bool& ok)
 {
     char tool[64]{};
@@ -140,6 +149,17 @@ std::string HandleBridgeVerb(const std::string& verb, const std::string& payload
     {
         ok = true;
         return FormatToolLog();
+    }
+
+    if (verb == "ai.replay")
+    {
+        EnsureDebugWorld();
+        WorldState replay = MakeDebugBaseline();
+        const Result result = replay.ReplayToolLogFrom(g_debugWorld);
+        ok = result.ok;
+        if (!result.ok)
+            return result.reason;
+        return "xrsim replay digest=" + replay.Digest();
     }
 
     ok = false;
