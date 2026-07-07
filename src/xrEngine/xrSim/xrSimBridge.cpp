@@ -192,6 +192,8 @@ std::string HandleBridgeVerb(const std::string& verb, const std::string& payload
     {
         EnsureDebugWorld();
         ok = true;
+        if (payload == "live")
+            return DescribeAgentProviderConfig(LoadAgentProviderConfigFromEnvironment());
         return "id=1 provider=null model=deterministic-null";
     }
 

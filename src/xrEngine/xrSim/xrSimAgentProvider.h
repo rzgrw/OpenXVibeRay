@@ -29,7 +29,23 @@ struct AgentProviderResult
     std::string provider;
     std::string model;
     std::string error;
+    std::string coastReason;
     std::vector<AgentIntent> intents;
+};
+
+struct AgentConfigVar
+{
+    std::string name;
+    std::string value;
+};
+
+struct AgentProviderConfig
+{
+    bool enabled = true;
+    std::string provider = "anthropic";
+    std::string model = "claude-sonnet-5";
+    std::string apiKey;
+    uint32_t timeoutMs = 30000;
 };
 
 class IAgentProvider
@@ -43,6 +59,17 @@ class NullAgentProvider : public IAgentProvider
 {
 public:
     AgentProviderResult Wake(const AgentWakeContext& context) override;
+};
+
+class AnthropicAgentProviderShell : public IAgentProvider
+{
+public:
+    explicit AnthropicAgentProviderShell(const AgentProviderConfig& config);
+
+    AgentProviderResult Wake(const AgentWakeContext& context) override;
+
+private:
+    AgentProviderConfig m_config;
 };
 
 class RecordedAgentProvider : public IAgentProvider
@@ -60,6 +87,11 @@ private:
 std::string BuildAgentWakePrompt(const AgentWakeContext& context);
 AgentProviderResult ParseAgentProviderResponse(
     const std::string& text, const std::string& provider, const std::string& model);
+AgentProviderConfig BuildAgentProviderConfig(const std::vector<AgentConfigVar>& vars);
+AgentProviderConfig LoadAgentProviderConfigFromEnvironment();
+std::string DescribeAgentProviderConfig(const AgentProviderConfig& config);
+std::string FormatAgentProviderLedgerRecord(
+    uint32_t seq, const AgentWakeContext& context, const AgentProviderResult& result, uint32_t latencyMs);
 
 class RecordedTextAgentProvider : public IAgentProvider
 {

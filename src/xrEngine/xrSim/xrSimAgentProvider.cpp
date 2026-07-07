@@ -35,6 +35,44 @@ bool ParseInt32(const std::string& text, int32_t& value)
     value = int32_t(parsed);
     return true;
 }
+
+bool ParseUint32(const std::string& text, uint32_t& value)
+{
+    if (text.empty())
+        return false;
+
+    char* end = nullptr;
+    errno = 0;
+    const unsigned long parsed = std::strtoul(text.c_str(), &end, 10);
+    if (errno != 0 || !end || *end != '\0')
+        return false;
+    if (parsed > std::numeric_limits<uint32_t>::max())
+        return false;
+
+    value = uint32_t(parsed);
+    return true;
+}
+
+std::string FindVar(const std::vector<AgentConfigVar>& vars, const std::string& name)
+{
+    for (const AgentConfigVar& var : vars)
+    {
+        if (var.name == name)
+            return var.value;
+    }
+    return "";
+}
+
+AgentProviderResult CoastResponse(const std::string& provider, const std::string& model, const std::string& reason)
+{
+    AgentProviderResult result;
+    result.ok = true;
+    result.coast = true;
+    result.provider = provider;
+    result.model = model;
+    result.coastReason = reason;
+    return result;
+}
 } // namespace
 
 AgentProviderResult NullAgentProvider::Wake(const AgentWakeContext& context)
@@ -53,6 +91,22 @@ AgentProviderResult NullAgentProvider::Wake(const AgentWakeContext& context)
     intent.delta = 5;
     result.intents.push_back(intent);
     return result;
+}
+
+AnthropicAgentProviderShell::AnthropicAgentProviderShell(const AgentProviderConfig& config) : m_config(config) {}
+
+AgentProviderResult AnthropicAgentProviderShell::Wake(const AgentWakeContext& context)
+{
+    (void)context;
+
+    if (!m_config.enabled)
+        return CoastResponse(m_config.provider, m_config.model, "provider_disabled");
+    if (m_config.provider != "anthropic")
+        return CoastResponse(m_config.provider, m_config.model, "unsupported_provider");
+    if (m_config.apiKey.empty())
+        return CoastResponse(m_config.provider, m_config.model, "missing_api_key");
+
+    return CoastResponse(m_config.provider, m_config.model, "network_adapter_not_linked");
 }
 
 RecordedAgentProvider::RecordedAgentProvider(const std::vector<AgentProviderResult>& script) : m_script(script) {}
@@ -159,6 +213,97 @@ AgentProviderResult ParseAgentProviderResponse(
         return FailResponse(provider, model, "agent response contained no intents");
 
     return result;
+}
+
+AgentProviderConfig BuildAgentProviderConfig(const std::vector<AgentConfigVar>& vars)
+{
+    AgentProviderConfig config;
+
+    const std::string provider = FindVar(vars, "XRAY_AGENT_PROVIDER");
+    if (!provider.empty())
+    {
+        config.provider = provider;
+        config.enabled = provider != "off" && provider != "disabled";
+    }
+
+    const std::string model = FindVar(vars, "XRAY_AGENT_MODEL");
+    if (!model.empty())
+        config.model = model;
+
+    const std::string genericKey = FindVar(vars, "XRAY_AGENT_API_KEY");
+    const std::string anthropicKey = FindVar(vars, "ANTHROPIC_API_KEY");
+    config.apiKey = genericKey.empty() ? anthropicKey : genericKey;
+
+    uint32_t timeoutMs = 0;
+    if (ParseUint32(FindVar(vars, "XRAY_AGENT_TIMEOUT_MS"), timeoutMs) && timeoutMs > 0)
+        config.timeoutMs = timeoutMs;
+
+    return config;
+}
+
+AgentProviderConfig LoadAgentProviderConfigFromEnvironment()
+{
+    std::vector<AgentConfigVar> vars;
+    const char* names[] = {
+        "XRAY_AGENT_PROVIDER",
+        "XRAY_AGENT_MODEL",
+        "XRAY_AGENT_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "XRAY_AGENT_TIMEOUT_MS",
+    };
+
+    for (const char* name : names)
+    {
+        const char* value = std::getenv(name);
+        if (value)
+            vars.push_back(AgentConfigVar{ name, value });
+    }
+
+    return BuildAgentProviderConfig(vars);
+}
+
+std::string DescribeAgentProviderConfig(const AgentProviderConfig& config)
+{
+    std::string state = "ready";
+    std::string reason;
+    if (!config.enabled)
+    {
+        state = "coast";
+        reason = "provider_disabled";
+    }
+    else if (config.apiKey.empty())
+    {
+        state = "coast";
+        reason = "missing_api_key";
+    }
+
+    std::ostringstream out;
+    out << "provider=" << config.provider << " model=" << config.model << " state=" << state;
+    if (!reason.empty())
+        out << " reason=" << reason;
+    out << " timeout_ms=" << config.timeoutMs;
+    return out.str();
+}
+
+std::string FormatAgentProviderLedgerRecord(
+    uint32_t seq, const AgentWakeContext& context, const AgentProviderResult& result, uint32_t latencyMs)
+{
+    std::ostringstream out;
+    out << "xrsim_agent_provider_record_v1";
+    out << " seq=" << seq;
+    out << " agent_id=" << context.agentId;
+    out << " game_day=" << context.gameDay;
+    out << " provider=" << result.provider;
+    out << " model=" << result.model;
+    out << " ok=" << (result.ok ? 1 : 0);
+    out << " coast=" << (result.coast ? 1 : 0);
+    out << " intents=" << result.intents.size();
+    if (!result.error.empty())
+        out << " error=" << result.error;
+    if (!result.coastReason.empty())
+        out << " coast_reason=" << result.coastReason;
+    out << " latency_ms=" << latencyMs;
+    return out.str();
 }
 
 RecordedTextAgentProvider::RecordedTextAgentProvider(

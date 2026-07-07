@@ -154,6 +154,7 @@ python3 tools/agentctl.py <sock> ai.observe
 python3 tools/agentctl.py <sock> ai.inject adjust_population debug_region blind_dog 500
 python3 tools/agentctl.py <sock> ai.snapshot
 python3 tools/agentctl.py <sock> ai.log
+python3 tools/agentctl.py <sock> agent.provider live  # Sonnet-tier provider shell; coasts if no API key
 ```
 
 Smoke script:
@@ -161,6 +162,12 @@ Smoke script:
 ```bash
 python3 tools/gl_macos_soak.py --scenario tools/ai_zone_smoke.txt --artifacts artifacts/ai_zone_smoke
 ```
+
+Provider shell checkpoint (provider-free, no HTTP yet):
+- Default live provider config is `provider=anthropic`, `model=claude-sonnet-5`, `timeout_ms=30000`.
+- Env overrides: `XRAY_AGENT_PROVIDER`, `XRAY_AGENT_MODEL`, `XRAY_AGENT_API_KEY` or `ANTHROPIC_API_KEY`, `XRAY_AGENT_TIMEOUT_MS`.
+- Missing key is a normal **coast** value (`reason=missing_api_key`), not an error/throw. A present key currently still coasts with `network_adapter_not_linked` until the HTTP/SSE adapter lands.
+- `agent.provider live` reports the effective shell state through the bridge; deterministic null remains the default runtime provider.
 
 ---
 
