@@ -117,3 +117,24 @@ Verbs: hello, cmd, lua, key, mouse, state, shot, bye — protocol in
 The bridge sets rs_always_active so the game keeps simulating without window focus.
 Example: `python3 tools/agentctl.py appdata/agent_bridge.sock lua 'db.actor.health'`
 Acceptance loop: `tools/bridge_acceptance.txt`.
+
+### GL macOS stability gate
+
+The AI phase uses OpenGL (`renderer_r3`) as the stable host runtime. Use the GL soak wrapper to launch the game, drive the bridge, collect logs/screenshots, sample RSS, and write artifacts:
+
+```bash
+python3 /Users/rz/OpenXVibeRay/tools/gl_macos_soak.py \
+  --scenario /Users/rz/OpenXVibeRay/tools/gl_menu_smoke.txt \
+  --artifacts /Users/rz/OpenXVibeRay/artifacts/gl_macos_soak/menu
+
+python3 /Users/rz/OpenXVibeRay/tools/gl_macos_soak.py \
+  --scenario /Users/rz/OpenXVibeRay/tools/gl_load_play_save_load.txt \
+  --artifacts /Users/rz/OpenXVibeRay/artifacts/gl_macos_soak/load_play_save_load
+
+python3 /Users/rz/OpenXVibeRay/tools/gl_macos_soak.py \
+  --scenario /Users/rz/OpenXVibeRay/tools/gl_load_play_save_load.txt \
+  --repeat 5 \
+  --artifacts /Users/rz/OpenXVibeRay/artifacts/gl_macos_soak/repeat_5
+```
+
+Artifacts include `summary.json`, `report.txt`, a copied engine log, bridge state samples, RSS samples, screenshot status, and pass/fail reasons.

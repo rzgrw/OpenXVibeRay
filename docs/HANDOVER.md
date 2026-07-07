@@ -81,6 +81,19 @@ python3 /Users/rz/OpenXVibeRay/tools/agentctl.py "$SOCK" cmd 'flush'    # force 
 Verbs: `hello/cmd/lua/key/mouse/state/shot/bye`. The soak regression gate: `tools/agentctl.py <sock> --script tools/bridge_soak.txt`.
 Log: `appdata/logs/openxray_radik zagirov.log` (truncate before a run to isolate output).
 
+### 3.5 GL stability gate
+
+Before AI work, keep `renderer_r3` green with the GL macOS soak wrapper:
+
+```bash
+python3 /Users/rz/OpenXVibeRay/tools/gl_macos_soak.py \
+  --scenario /Users/rz/OpenXVibeRay/tools/gl_load_play_save_load.txt \
+  --repeat 5 \
+  --artifacts /Users/rz/OpenXVibeRay/artifacts/gl_macos_soak/repeat_5
+```
+
+This launches the game from the CoC run directory, drives the bridge, samples FPS/frame progress and RSS, validates screenshots/logs/exit, and writes `summary.json` plus `report.txt`.
+
 ### 3.4 Two gotchas that will waste your time
 - **Do NOT use `-nosound`.** It crashes CoC's `sound_theme.script` (`nil played_id`). To silence audio, set in `appdata/user.ltx` (while the game is stopped): `snd_volume_eff 0.` and `snd_volume_music 0.` — keeps the sound subsystem alive so scripts work.
 - **Renderer select** is `renderer` in `appdata/user.ltx`: `renderer_r3` = GL (**current default**), `renderer_metal` = Metal. Change while the game is stopped.
