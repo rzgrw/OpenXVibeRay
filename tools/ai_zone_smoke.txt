@@ -6,4 +6,6 @@ ai.status
 ai.observe
 ai.inject adjust_population debug_region blind_dog 500
 ai.observe
+ai.snapshot
+ai.log
 cmd quit

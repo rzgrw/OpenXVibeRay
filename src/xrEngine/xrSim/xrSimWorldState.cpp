@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <sstream>
 
 namespace xrSim
 {
@@ -169,6 +170,139 @@ std::string WorldState::Digest() const
 
     out += "}";
     return out;
+}
+
+std::string WorldState::SaveSnapshot() const
+{
+    std::ostringstream out;
+    out << "xrsim_snapshot_v1\n";
+
+    out << "regions " << m_regions.size() << "\n";
+    for (size_t i = 0; i < m_regions.size(); ++i)
+    {
+        const Region& region = m_regions[i];
+        out << "region " << MakeHandle(uint32_t(i), region.generation).value << " " << region.carryingCapacity << " "
+            << region.name << "\n";
+    }
+
+    out << "species " << m_species.size() << "\n";
+    for (size_t i = 0; i < m_species.size(); ++i)
+    {
+        const Species& species = m_species[i];
+        out << "species " << MakeHandle(uint32_t(i), species.generation).value << " " << species.name << "\n";
+    }
+
+    out << "cohorts " << m_cohorts.size() << "\n";
+    for (const Cohort& cohort : m_cohorts)
+        out << "cohort " << cohort.region.value << " " << cohort.species.value << " " << cohort.count << "\n";
+
+    out << "tools " << m_toolLog.size() << "\n";
+    for (const ToolRecord& record : m_toolLog)
+    {
+        out << "tool " << record.seq << " " << record.gameDay << " " << record.tool << " " << record.region.value << " "
+            << record.species.value << " " << (record.accepted ? 1 : 0) << " " << record.requestedDelta << " "
+            << record.appliedDelta << " " << (record.reason.empty() ? "-" : record.reason) << "\n";
+    }
+
+    out << "end\n";
+    return out.str();
+}
+
+Result WorldState::LoadSnapshot(const std::string& snapshot)
+{
+    std::istringstream input(snapshot);
+    std::string token;
+    input >> token;
+    if (token != "xrsim_snapshot_v1")
+        return Result{ false, 0, "unsupported snapshot version" };
+
+    WorldState loaded;
+    size_t count = 0;
+
+    input >> token >> count;
+    if (!input || token != "regions")
+        return Result{ false, 0, "missing regions block" };
+    for (size_t i = 0; i < count; ++i)
+    {
+        uint32_t handleValue = 0;
+        int32_t carryingCapacity = 0;
+        std::string name;
+        input >> token >> handleValue >> carryingCapacity >> name;
+        const Handle handle{ handleValue };
+        if (!input || token != "region" || handle.Index() != loaded.m_regions.size())
+            return Result{ false, 0, "invalid region record" };
+
+        Region region;
+        region.generation = uint8_t(handle.Generation());
+        region.name = name;
+        region.carryingCapacity = carryingCapacity < 0 ? 0 : carryingCapacity;
+        loaded.m_regions.push_back(region);
+    }
+
+    input >> token >> count;
+    if (!input || token != "species")
+        return Result{ false, 0, "missing species block" };
+    for (size_t i = 0; i < count; ++i)
+    {
+        uint32_t handleValue = 0;
+        std::string name;
+        input >> token >> handleValue >> name;
+        const Handle handle{ handleValue };
+        if (!input || token != "species" || handle.Index() != loaded.m_species.size())
+            return Result{ false, 0, "invalid species record" };
+
+        Species species;
+        species.generation = uint8_t(handle.Generation());
+        species.name = name;
+        loaded.m_species.push_back(species);
+    }
+
+    input >> token >> count;
+    if (!input || token != "cohorts")
+        return Result{ false, 0, "missing cohorts block" };
+    for (size_t i = 0; i < count; ++i)
+    {
+        uint32_t regionValue = 0;
+        uint32_t speciesValue = 0;
+        int32_t cohortCount = 0;
+        input >> token >> regionValue >> speciesValue >> cohortCount;
+        const Handle region{ regionValue };
+        const Handle species{ speciesValue };
+        if (!input || token != "cohort" || !loaded.FindRegion(region) || !loaded.FindSpecies(species))
+            return Result{ false, 0, "invalid cohort record" };
+
+        loaded.m_cohorts.push_back(Cohort{ region, species, cohortCount });
+    }
+
+    input >> token >> count;
+    if (!input || token != "tools")
+        return Result{ false, 0, "missing tools block" };
+    for (size_t i = 0; i < count; ++i)
+    {
+        uint32_t regionValue = 0;
+        uint32_t speciesValue = 0;
+        int accepted = 0;
+        std::string tool;
+        std::string reason;
+        ToolRecord record;
+        input >> token >> record.seq >> record.gameDay >> tool >> regionValue >> speciesValue >> accepted >>
+            record.requestedDelta >> record.appliedDelta >> reason;
+        record.tool = "adjust_population";
+        record.region = Handle{ regionValue };
+        record.species = Handle{ speciesValue };
+        record.accepted = accepted != 0;
+        record.reason = reason == "-" ? "" : reason;
+        if (!input || token != "tool" || tool != "adjust_population")
+            return Result{ false, 0, "invalid tool record" };
+        loaded.m_toolLog.push_back(record);
+    }
+
+    input >> token;
+    if (!input || token != "end")
+        return Result{ false, 0, "missing snapshot end" };
+
+    *this = loaded;
+    return Result{ true, 0, "" };
 }
 
 const WorldState::Region* WorldState::FindRegion(Handle handle) const
