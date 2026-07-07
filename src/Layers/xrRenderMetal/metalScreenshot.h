@@ -2,7 +2,7 @@
 // Deferred screenshot capture for the Metal backend.
 //
 // A screenshot request can arrive at any point in the frame (e.g. the agent
-// bridge drains it at ProcessFrame start, when no drawable exists yet). The
+// bridge drains it before rendering, when no drawable exists yet). The
 // CAMetalDrawable is only valid between BeginScene and Present, so we LATCH the
 // request and service it in CHW::EndScene — after phase_flip has copied the
 // finished frame into the drawable and while the command buffer is still open.

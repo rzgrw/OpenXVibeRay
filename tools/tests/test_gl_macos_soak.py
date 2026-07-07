@@ -1,5 +1,7 @@
 import json
+import os
 import tempfile
+import time
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -130,8 +132,39 @@ class TimeoutHelperTests(unittest.TestCase):
         self.assertEqual((0.0, True), process_wait_timeout_seconds(0.0))
         self.assertEqual((0.0, True), process_wait_timeout_seconds(-1.0))
 
+    def test_sleep_process_aware_stops_when_process_already_exited(self):
+        from tools.gl_macos_soak import sleep_process_aware
+
+        class ExitedProcess:
+            def poll(self):
+                return -11
+
+        class RunningProcess:
+            def poll(self):
+                return None
+
+        self.assertFalse(sleep_process_aware(10.0, ExitedProcess()))
+        self.assertTrue(sleep_process_aware(0.0, RunningProcess()))
+
 
 class SocketWaitTests(unittest.TestCase):
+    def test_relative_binary_launch_arg_becomes_absolute(self):
+        from tools.gl_macos_soak import resolve_binary_path
+
+        self.assertEqual(Path.cwd() / "bin/arm64/Release/xr_3da", resolve_binary_path(Path("bin/arm64/Release/xr_3da")))
+
+    def test_relative_socket_launch_arg_stays_relative_for_spaced_game_dir(self):
+        from tools.gl_macos_soak import build_launch_command, resolve_socket_path
+
+        game_dir = Path("/tmp/S.T.A.L.K.E.R. - Call of Chernobyl")
+        socket_arg = Path("appdata/agent_bridge.sock")
+
+        self.assertEqual(game_dir / socket_arg, resolve_socket_path(game_dir, socket_arg))
+        self.assertEqual(
+            ["/tmp/xr_3da", "-agent_bridge", "appdata/agent_bridge.sock"],
+            build_launch_command(Path("/tmp/xr_3da"), socket_arg),
+        )
+
     def test_wait_for_socket_fails_when_process_exits_first(self):
         from tools.gl_macos_soak import wait_for_socket
 
@@ -146,6 +179,15 @@ class SocketWaitTests(unittest.TestCase):
 
             with self.assertRaisesRegex(RuntimeError, "process exited before socket appeared: 42"):
                 wait_for_socket(missing_socket, 60.0, ExitedProcess())
+
+
+class BridgeCommandTests(unittest.TestCase):
+    def test_is_quit_command_only_matches_console_quit(self):
+        from tools.gl_macos_soak import is_quit_command
+
+        self.assertTrue(is_quit_command("cmd", " quit "))
+        self.assertFalse(is_quit_command("cmd", "flush"))
+        self.assertFalse(is_quit_command("bye", ""))
 
 
 class LiveCliTests(unittest.TestCase):
@@ -235,10 +277,45 @@ class ScreenshotTests(unittest.TestCase):
 
             status = collect_screenshot_status(game_dir, ["exists", "missing"])
 
-            self.assertEqual([
-                {"name": "exists", "path": str(screenshot_dir / "exists.jpg"), "exists": True, "size": 3},
+            self.assertEqual("exists", status[0]["name"])
+            self.assertEqual(str(screenshot_dir / "exists.jpg"), status[0]["path"])
+            self.assertEqual(True, status[0]["exists"])
+            self.assertEqual(3, status[0]["size"])
+            self.assertIn("mtime", status[0])
+            self.assertEqual(
                 {"name": "missing", "path": str(screenshot_dir / "missing.jpg"), "exists": False, "size": 0},
-            ], status)
+                status[1],
+            )
+
+    def test_collect_screenshot_status_marks_stale_files(self):
+        from tools.gl_macos_soak import collect_screenshot_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            game_dir = Path(tmp)
+            screenshot_dir = game_dir / "appdata" / "screenshots"
+            screenshot_dir.mkdir(parents=True)
+            shot = screenshot_dir / "old.jpg"
+            shot.write_bytes(b"jpg")
+            os.utime(shot, (1, 1))
+
+            status = collect_screenshot_status(game_dir, ["old"], not_before=time.time())
+
+            self.assertFalse(status[0]["fresh"])
+
+    def test_remove_expected_screenshots_deletes_only_named_files(self):
+        from tools.gl_macos_soak import remove_expected_screenshots
+
+        with tempfile.TemporaryDirectory() as tmp:
+            game_dir = Path(tmp)
+            screenshot_dir = game_dir / "appdata" / "screenshots"
+            screenshot_dir.mkdir(parents=True)
+            (screenshot_dir / "delete.jpg").write_bytes(b"jpg")
+            (screenshot_dir / "keep.jpg").write_bytes(b"jpg")
+
+            remove_expected_screenshots(game_dir, ["delete"])
+
+            self.assertFalse((screenshot_dir / "delete.jpg").exists())
+            self.assertTrue((screenshot_dir / "keep.jpg").exists())
 
 
 if __name__ == "__main__":

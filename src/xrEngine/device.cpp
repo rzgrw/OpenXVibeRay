@@ -263,15 +263,15 @@ void CRenderDevice::ProcessFrame()
 {
     ZoneScoped;
 
-    if (g_agent_bridge)
-        g_agent_bridge->OnFrame();
-
     if (!BeforeFrame())
         return;
 
     const u64 frameStartTime = TimerGlobal.GetElapsed_ms();
 
     FrameMove();
+
+    if (g_agent_bridge)
+        g_agent_bridge->OnFrame();
 
     OnCameraUpdated();
 

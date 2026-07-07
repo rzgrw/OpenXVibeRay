@@ -173,19 +173,66 @@ def expected_screenshots(steps: list[ScenarioStep]) -> list[str]:
     return names
 
 
-def collect_screenshot_status(game_dir: Path, names: list[str]) -> list[dict[str, Any]]:
+def remove_expected_screenshots(game_dir: Path, names: list[str]) -> None:
+    screenshot_dir = game_dir / "appdata" / "screenshots"
+    for name in names:
+        path = screenshot_dir / f"{name}.jpg"
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def collect_screenshot_status(
+    game_dir: Path,
+    names: list[str],
+    not_before: float | None = None,
+) -> list[dict[str, Any]]:
     screenshot_dir = game_dir / "appdata" / "screenshots"
     status: list[dict[str, Any]] = []
     for name in names:
         path = screenshot_dir / f"{name}.jpg"
         exists = path.exists()
-        status.append({
+        mtime = path.stat().st_mtime if exists else None
+        entry: dict[str, Any] = {
             "name": name,
             "path": str(path),
             "exists": exists,
             "size": path.stat().st_size if exists else 0,
-        })
+        }
+        if mtime is not None:
+            entry["mtime"] = mtime
+        if not_before is not None:
+            entry["fresh"] = exists and mtime is not None and mtime >= not_before - 1.0
+        status.append(entry)
     return status
+
+
+def resolve_socket_path(game_dir: Path, socket_arg: Path) -> Path:
+    return socket_arg if socket_arg.is_absolute() else game_dir / socket_arg
+
+
+def resolve_binary_path(binary_arg: Path) -> Path:
+    return binary_arg if binary_arg.is_absolute() else (Path.cwd() / binary_arg).resolve()
+
+
+def build_launch_command(binary: Path, socket_arg: Path) -> list[str]:
+    return [str(binary), "-agent_bridge", str(socket_arg)]
+
+
+def is_quit_command(verb: str, payload: str) -> bool:
+    return verb == "cmd" and payload.strip() == "quit"
+
+
+def sleep_process_aware(seconds: float, process: subprocess.Popen[Any], poll_interval: float = 0.25) -> bool:
+    end = time.monotonic() + seconds
+    while True:
+        if process.poll() is not None:
+            return False
+        remaining = end - time.monotonic()
+        if remaining <= 0.0:
+            return True
+        time.sleep(min(max(poll_interval, 0.01), remaining))
 
 
 def bounded_sleep_seconds(requested_seconds: float, remaining_seconds: float) -> tuple[float, bool]:
@@ -215,7 +262,8 @@ def wait_for_socket(path: Path, timeout: float, process: subprocess.Popen[Any] |
 
 def run_scenario(args: argparse.Namespace, steps: list[ScenarioStep]) -> dict[str, Any]:
     game_dir = args.game_dir
-    socket_path = args.socket if args.socket.is_absolute() else game_dir / args.socket
+    binary_path = resolve_binary_path(args.binary)
+    socket_path = resolve_socket_path(game_dir, args.socket)
     log_path = game_dir / DEFAULT_LOG_REL
     artifacts = args.artifacts
     artifacts.mkdir(parents=True, exist_ok=True)
@@ -225,7 +273,11 @@ def run_scenario(args: argparse.Namespace, steps: list[ScenarioStep]) -> dict[st
     if socket_path.exists():
         socket_path.unlink()
 
-    command = [str(args.binary), "-agent_bridge", str(socket_path)]
+    expected_shots = expected_screenshots(steps)
+    remove_expected_screenshots(game_dir, expected_shots)
+
+    command = build_launch_command(binary_path, args.socket)
+    started_wall = time.time()
     started = time.monotonic()
     deadline = started + args.timeout
     proc = subprocess.Popen(
@@ -239,7 +291,17 @@ def run_scenario(args: argparse.Namespace, steps: list[ScenarioStep]) -> dict[st
     states: list[dict[str, Any]] = []
     rss_samples: list[dict[str, Any]] = []
     bridge_failures: list[dict[str, str]] = []
+    events: list[dict[str, Any]] = []
     stop_sampling = threading.Event()
+
+    def record_event(step: ScenarioStep, status: str, **extra: Any) -> None:
+        event: dict[str, Any] = {
+            "t": round(time.monotonic() - started, 3),
+            "status": status,
+            "step": step.raw,
+        }
+        event.update(extra)
+        events.append(event)
 
     def sampler() -> None:
         while not stop_sampling.is_set():
@@ -263,16 +325,32 @@ def run_scenario(args: argparse.Namespace, steps: list[ScenarioStep]) -> dict[st
             if remaining <= 0.0:
                 timed_out = True
                 break
+            record_event(step, "start")
             if step.kind == "sleep":
                 sleep_seconds, clipped = bounded_sleep_seconds(float(step.args[0]), remaining)
                 if sleep_seconds > 0.0:
-                    time.sleep(sleep_seconds)
+                    if not sleep_process_aware(sleep_seconds, proc):
+                        record_event(step, "process_exited_during_sleep", returncode=proc.returncode)
+                        break
                 if clipped:
                     timed_out = True
+                    record_event(step, "clipped_by_timeout")
                     break
+                record_event(step, "done")
                 continue
+            if proc.poll() is not None:
+                record_event(step, "process_exited_before_step", returncode=proc.returncode)
+                break
             verb, payload = step.args
-            ok, out = bridge.request(verb, payload)
+            try:
+                ok, out = bridge.request(verb, payload)
+            except ConnectionError:
+                if is_quit_command(verb, payload):
+                    record_event(step, "closed_on_quit")
+                    break
+                record_event(step, "connection_error")
+                raise
+            record_event(step, "response", ok=ok, response=out)
             if verb == "state" and ok:
                 states.append({
                     "t": round(time.monotonic() - started, 3),
@@ -309,12 +387,12 @@ def run_scenario(args: argparse.Namespace, steps: list[ScenarioStep]) -> dict[st
     log_copy.write_text(log_text)
 
     duration_sec = round(time.monotonic() - started, 3)
-    screenshots = collect_screenshot_status(game_dir, expected_screenshots(steps))
+    screenshots = collect_screenshot_status(game_dir, expected_shots, not_before=started_wall)
     summary = {
         "dry_run": False,
         "scenario": str(args.scenario),
         "game_dir": str(game_dir),
-        "binary": str(args.binary),
+        "binary": str(binary_path),
         "socket": str(socket_path),
         "command": command,
         "duration_sec": duration_sec,
@@ -325,6 +403,7 @@ def run_scenario(args: argparse.Namespace, steps: list[ScenarioStep]) -> dict[st
         "rss_samples": rss_samples,
         "rss_high_water_kb": max((s["rss_kb"] for s in rss_samples), default=None),
         "bridge_failures": bridge_failures,
+        "events": events,
         "longest_frame_stall_sec": longest_frame_stall_sec(states),
         "log_findings": scan_log_text(log_text),
         "log_copy": str(log_copy),
@@ -349,6 +428,8 @@ def evaluate_summary(summary: dict[str, Any]) -> tuple[bool, list[str]]:
     for shot in summary.get("screenshots", []):
         if not shot.get("exists") or int(shot.get("size") or 0) <= 0:
             failures.append(f"screenshot missing or empty: {shot.get('name')}")
+        elif shot.get("fresh") is False:
+            failures.append(f"screenshot stale: {shot.get('name')}")
     if not summary.get("states"):
         failures.append("no state samples recorded")
     if summary.get("rss_high_water_kb") is None:
@@ -360,6 +441,8 @@ def evaluate_summary(summary: dict[str, Any]) -> tuple[bool, list[str]]:
 
 
 def write_report(path: Path, summary: dict[str, Any], passed: bool, failures: list[str]) -> None:
+    events = summary.get("events") or []
+    last_event = json.dumps(events[-1], sort_keys=True) if events else "none"
     lines = [
         f"GL macOS soak: {'PASS' if passed else 'FAIL'}",
         f"scenario: {summary.get('scenario')}",
@@ -367,6 +450,7 @@ def write_report(path: Path, summary: dict[str, Any], passed: bool, failures: li
         f"process_returncode: {summary.get('process_returncode')}",
         f"rss_high_water_kb: {summary.get('rss_high_water_kb')}",
         f"longest_frame_stall_sec: {summary.get('longest_frame_stall_sec')}",
+        f"last_event: {last_event}",
         f"log_copy: {summary.get('log_copy')}",
         "",
         "failures:",

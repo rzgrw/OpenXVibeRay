@@ -1,6 +1,7 @@
 # GL stability gate: load, move/look, save/load, inventory, quit.
 hello
 state
+sleep 5
 cmd start server(1/single/alife/load) client(localhost)
 sleep 45
 key space tap
