@@ -86,7 +86,14 @@ class DryRunCliTests(unittest.TestCase):
         commands = [step.raw for step in steps if step.kind == "bridge"]
         self.assertIn("ai.reset", commands)
         self.assertIn("ai.observe", commands)
+        self.assertIn("ai.wake", commands)
         self.assertIn("ai.inject adjust_population debug_region blind_dog 500", commands)
+        self.assertIn("ai.snapshot", commands)
+        self.assertIn("ai.log", commands)
+        self.assertIn("ai.replay", commands)
+        self.assertIn("agent.list", commands)
+        self.assertIn("agent.wake 1", commands)
+        self.assertIn("agent.tree", commands)
 
     def test_dry_run_writes_summary(self):
         from tools.gl_macos_soak import main

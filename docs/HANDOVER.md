@@ -152,6 +152,8 @@ Debug bridge verbs are available in `-agent_bridge` sessions:
 python3 tools/agentctl.py <sock> ai.reset
 python3 tools/agentctl.py <sock> ai.observe
 python3 tools/agentctl.py <sock> ai.inject adjust_population debug_region blind_dog 500
+python3 tools/agentctl.py <sock> ai.snapshot
+python3 tools/agentctl.py <sock> ai.log
 ```
 
 Smoke script:

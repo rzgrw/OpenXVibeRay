@@ -4,6 +4,14 @@ state
 ai.reset
 ai.status
 ai.observe
+ai.wake
+ai.observe
 ai.inject adjust_population debug_region blind_dog 500
 ai.observe
+ai.snapshot
+ai.log
+ai.replay
+agent.list
+agent.wake 1
+agent.tree
 cmd quit

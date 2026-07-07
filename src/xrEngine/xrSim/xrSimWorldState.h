@@ -54,6 +54,9 @@ public:
     int32_t Population(Handle region, Handle species) const;
     const std::vector<ToolRecord>& ToolLog() const;
     std::string Digest() const;
+    std::string SaveSnapshot() const;
+    Result LoadSnapshot(const std::string& snapshot);
+    Result ReplayToolLogFrom(const WorldState& recorded);
 
 private:
     struct Region
