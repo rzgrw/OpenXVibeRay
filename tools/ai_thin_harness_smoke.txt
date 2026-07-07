@@ -1,0 +1,14 @@
+# Thin-harness debug AI smoke: proves LLM-style actor intents are reachable over the bridge.
+hello
+ai.reset
+agent.provider live
+agent.actor.list
+agent.actor.observe squad
+agent.actor.wake squad
+agent.actor.commands
+agent.actor.observe mutant_pack
+agent.actor.wake mutant_pack
+agent.actor.commands
+ai.snapshot
+ai.log
+cmd quit

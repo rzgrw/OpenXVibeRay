@@ -98,6 +98,20 @@ class DryRunCliTests(unittest.TestCase):
         self.assertIn("agent.wake 1", commands)
         self.assertIn("agent.tree", commands)
 
+    def test_ai_thin_harness_smoke_script_exercises_actor_verbs(self):
+        scenario = Path("tools/ai_thin_harness_smoke.txt")
+        steps = parse_scenario_lines(scenario.read_text().splitlines())
+
+        commands = [step.raw for step in steps if step.kind == "bridge"]
+        self.assertIn("ai.reset", commands)
+        self.assertIn("agent.actor.list", commands)
+        self.assertIn("agent.actor.observe squad", commands)
+        self.assertIn("agent.actor.wake squad", commands)
+        self.assertIn("agent.actor.observe mutant_pack", commands)
+        self.assertIn("agent.actor.wake mutant_pack", commands)
+        self.assertIn("agent.actor.commands", commands)
+        self.assertIn("agent.provider live", commands)
+
     def test_dry_run_writes_summary(self):
         from tools.gl_macos_soak import main
 

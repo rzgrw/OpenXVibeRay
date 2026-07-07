@@ -163,6 +163,17 @@ Smoke script:
 python3 tools/gl_macos_soak.py --scenario tools/ai_zone_smoke.txt --artifacts artifacts/ai_zone_smoke
 ```
 
+Thin-harness actor checkpoint:
+- `src/xrEngine/xrSim/` now includes debug `SquadAgent` and `MutantPackAgent` records that parse `xrsim_actor_intent_v1`, validate actor actions, and emit deterministic actuator command streams.
+- Bridge verbs:
+  - `agent.actor.list`
+  - `agent.actor.observe squad`
+  - `agent.actor.wake squad`
+  - `agent.actor.observe mutant_pack`
+  - `agent.actor.wake mutant_pack`
+  - `agent.actor.commands`
+- Smoke: `python3 tools/gl_macos_soak.py --scenario tools/ai_thin_harness_smoke.txt --artifacts artifacts/ai_thin_harness_smoke`
+
 Provider shell checkpoint (provider-free, no HTTP yet):
 - Default live provider config is `provider=anthropic`, `model=claude-sonnet-5`, `timeout_ms=30000`.
 - Env overrides: `XRAY_AGENT_PROVIDER`, `XRAY_AGENT_MODEL`, `XRAY_AGENT_API_KEY` or `ANTHROPIC_API_KEY`, `XRAY_AGENT_TIMEOUT_MS`.
