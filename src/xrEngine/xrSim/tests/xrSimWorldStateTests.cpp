@@ -432,6 +432,51 @@ bool TestAgentProviderLedgerFormatsReplayMetadata()
     return ok;
 }
 
+bool TestAnthropicRequestEnvelopeUsesMessagesApiShape()
+{
+    xrSim::AgentProviderConfig config;
+    config.provider = "anthropic";
+    config.model = "claude-sonnet-5";
+
+    xrSim::AgentWakeContext context;
+    context.agentId = 9;
+    context.gameDay = 13;
+    context.observation = "quote=\"zone\"\nslash=\\";
+
+    const xrSim::AnthropicMessagesRequest request = xrSim::BuildAnthropicMessagesRequest(config, context, 768);
+    bool ok = Expect(request.method == "POST", "anthropic request uses POST");
+    ok = Expect(request.path == "/v1/messages", "anthropic request targets messages api") && ok;
+    ok = Expect(request.anthropicVersion == "2023-06-01", "anthropic request pins api version") && ok;
+    ok = Expect(request.contentType == "application/json", "anthropic request uses json content type") && ok;
+    ok = Expect(request.body.find("\"model\":\"claude-sonnet-5\"") != std::string::npos,
+        "anthropic request includes model") && ok;
+    ok = Expect(request.body.find("\"max_tokens\":768") != std::string::npos,
+        "anthropic request includes max tokens") && ok;
+    ok = Expect(request.body.find("\"messages\":[{\"role\":\"user\",\"content\":\"") != std::string::npos,
+        "anthropic request includes user message") && ok;
+    ok = Expect(request.body.find("quote=\\\"zone\\\"") != std::string::npos,
+        "anthropic request escapes quotes") && ok;
+    ok = Expect(request.body.find("slash=\\\\") != std::string::npos,
+        "anthropic request escapes backslash") && ok;
+    return ok;
+}
+
+bool TestAnthropicTextResponseParsesThroughAgentCodec()
+{
+    const char* response =
+        "{\"id\":\"msg_test\",\"type\":\"message\",\"role\":\"assistant\","
+        "\"content\":[{\"type\":\"text\",\"text\":\"xrsim_agent_response_v1\\ncoast\\nend\\n\"}],"
+        "\"model\":\"claude-sonnet-5\",\"stop_reason\":\"end_turn\"}";
+
+    const xrSim::AgentProviderResult result =
+        xrSim::ParseAnthropicMessagesTextResponse(response, "anthropic", "claude-sonnet-5");
+    bool ok = Expect(result.ok, "anthropic text response parses through agent codec");
+    ok = Expect(result.coast, "anthropic text response preserves coast") && ok;
+    ok = Expect(result.provider == "anthropic", "anthropic text response stamps provider") && ok;
+    ok = Expect(result.model == "claude-sonnet-5", "anthropic text response stamps model") && ok;
+    return ok;
+}
+
 bool TestNullAgentWakeAppliesDeterministicIntent()
 {
     xrSim::WorldState state;
@@ -601,6 +646,8 @@ int main()
     ok = TestAgentProviderConfigReadsEnvironmentValues() && ok;
     ok = TestAnthropicProviderShellCoastsWithoutApiKey() && ok;
     ok = TestAgentProviderLedgerFormatsReplayMetadata() && ok;
+    ok = TestAnthropicRequestEnvelopeUsesMessagesApiShape() && ok;
+    ok = TestAnthropicTextResponseParsesThroughAgentCodec() && ok;
     ok = TestNullAgentWakeAppliesDeterministicIntent() && ok;
     ok = TestBridgeDebugVerbs() && ok;
     ok = TestBridgeSnapshotVerbs() && ok;

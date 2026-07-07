@@ -73,6 +73,60 @@ AgentProviderResult CoastResponse(const std::string& provider, const std::string
     result.coastReason = reason;
     return result;
 }
+
+std::string EscapeJsonString(const std::string& text)
+{
+    std::string out;
+    out.reserve(text.size() + 8);
+    for (const char ch : text)
+    {
+        switch (ch)
+        {
+        case '\\': out += "\\\\"; break;
+        case '"': out += "\\\""; break;
+        case '\n': out += "\\n"; break;
+        case '\r': out += "\\r"; break;
+        case '\t': out += "\\t"; break;
+        default: out += ch; break;
+        }
+    }
+    return out;
+}
+
+bool DecodeJsonStringAt(const std::string& text, size_t valueStart, std::string& decoded)
+{
+    decoded.clear();
+    if (valueStart >= text.size() || text[valueStart] != '"')
+        return false;
+
+    for (size_t i = valueStart + 1; i < text.size(); ++i)
+    {
+        const char ch = text[i];
+        if (ch == '"')
+            return true;
+        if (ch != '\\')
+        {
+            decoded += ch;
+            continue;
+        }
+
+        if (++i >= text.size())
+            return false;
+        switch (text[i])
+        {
+        case '"': decoded += '"'; break;
+        case '\\': decoded += '\\'; break;
+        case '/': decoded += '/'; break;
+        case 'n': decoded += '\n'; break;
+        case 'r': decoded += '\r'; break;
+        case 't': decoded += '\t'; break;
+        case 'b': decoded += '\b'; break;
+        case 'f': decoded += '\f'; break;
+        default: return false;
+        }
+    }
+    return false;
+}
 } // namespace
 
 AgentProviderResult NullAgentProvider::Wake(const AgentWakeContext& context)
@@ -304,6 +358,46 @@ std::string FormatAgentProviderLedgerRecord(
         out << " coast_reason=" << result.coastReason;
     out << " latency_ms=" << latencyMs;
     return out.str();
+}
+
+AnthropicMessagesRequest BuildAnthropicMessagesRequest(
+    const AgentProviderConfig& config, const AgentWakeContext& context, uint32_t maxTokens)
+{
+    AnthropicMessagesRequest request;
+    request.method = "POST";
+    request.path = "/v1/messages";
+    request.anthropicVersion = "2023-06-01";
+    request.contentType = "application/json";
+
+    const std::string prompt = BuildAgentWakePrompt(context);
+    std::ostringstream body;
+    body << "{";
+    body << "\"model\":\"" << EscapeJsonString(config.model) << "\",";
+    body << "\"max_tokens\":" << maxTokens << ",";
+    body << "\"messages\":[{\"role\":\"user\",\"content\":\"" << EscapeJsonString(prompt) << "\"}]";
+    body << "}";
+    request.body = body.str();
+    return request;
+}
+
+AgentProviderResult ParseAnthropicMessagesTextResponse(
+    const std::string& text, const std::string& provider, const std::string& model)
+{
+    const std::string typeMarker = "\"type\":\"text\"";
+    const size_t typePos = text.find(typeMarker);
+    if (typePos == std::string::npos)
+        return FailResponse(provider, model, "anthropic response missing text block");
+
+    const std::string textMarker = "\"text\":\"";
+    const size_t textPos = text.find(textMarker, typePos);
+    if (textPos == std::string::npos)
+        return FailResponse(provider, model, "anthropic response missing text content");
+
+    std::string responseText;
+    if (!DecodeJsonStringAt(text, textPos + textMarker.size() - 1, responseText))
+        return FailResponse(provider, model, "invalid anthropic text content");
+
+    return ParseAgentProviderResponse(responseText, provider, model);
 }
 
 RecordedTextAgentProvider::RecordedTextAgentProvider(

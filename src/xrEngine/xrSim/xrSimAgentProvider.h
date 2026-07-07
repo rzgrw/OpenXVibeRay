@@ -48,6 +48,15 @@ struct AgentProviderConfig
     uint32_t timeoutMs = 30000;
 };
 
+struct AnthropicMessagesRequest
+{
+    std::string method;
+    std::string path;
+    std::string anthropicVersion;
+    std::string contentType;
+    std::string body;
+};
+
 class IAgentProvider
 {
 public:
@@ -92,6 +101,10 @@ AgentProviderConfig LoadAgentProviderConfigFromEnvironment();
 std::string DescribeAgentProviderConfig(const AgentProviderConfig& config);
 std::string FormatAgentProviderLedgerRecord(
     uint32_t seq, const AgentWakeContext& context, const AgentProviderResult& result, uint32_t latencyMs);
+AnthropicMessagesRequest BuildAnthropicMessagesRequest(
+    const AgentProviderConfig& config, const AgentWakeContext& context, uint32_t maxTokens);
+AgentProviderResult ParseAnthropicMessagesTextResponse(
+    const std::string& text, const std::string& provider, const std::string& model);
 
 class RecordedTextAgentProvider : public IAgentProvider
 {
