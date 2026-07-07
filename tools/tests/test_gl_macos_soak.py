@@ -92,6 +92,8 @@ class DryRunCliTests(unittest.TestCase):
         self.assertIn("ai.log", commands)
         self.assertIn("ai.replay", commands)
         self.assertIn("agent.list", commands)
+        self.assertIn("agent.provider", commands)
+        self.assertIn("agent.prompt", commands)
         self.assertIn("agent.wake 1", commands)
         self.assertIn("agent.tree", commands)
 

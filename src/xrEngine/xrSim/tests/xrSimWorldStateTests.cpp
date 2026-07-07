@@ -1,9 +1,11 @@
+#include "xrSim/xrSimAgentProvider.h"
 #include "xrSim/xrSimWorldState.h"
 #include "xrSim/xrSimBridge.h"
 #include "xrSim/xrSimNullAgent.h"
 
 #include <cstdio>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -158,6 +160,200 @@ bool TestReplayDetectsDivergentBaseline()
     return ok;
 }
 
+bool TestNullProviderReturnsDeterministicIntent()
+{
+    xrSim::NullAgentProvider provider;
+    xrSim::AgentWakeContext context;
+    context.agentId = 1;
+    context.gameDay = 3;
+    context.observation = "regions=1 species=1 cohorts=1 log=0 pop{debug_region:blind_dog=50}";
+
+    const xrSim::AgentProviderResult result = provider.Wake(context);
+    bool ok = Expect(result.ok, "null provider succeeds without network");
+    ok = Expect(result.provider == "null", "null provider reports provider id") && ok;
+    ok = Expect(result.model == "deterministic-null", "null provider reports deterministic model") && ok;
+    ok = Expect(result.intents.size() == 1, "null provider emits one intent") && ok;
+    if (result.intents.size() == 1)
+    {
+        ok = Expect(result.intents[0].tool == "adjust_population", "null provider emits adjust_population") && ok;
+        ok = Expect(result.intents[0].region == "debug_region", "null provider targets debug region") && ok;
+        ok = Expect(result.intents[0].species == "blind_dog", "null provider targets blind dog") && ok;
+        ok = Expect(result.intents[0].delta == 5, "null provider emits deterministic delta") && ok;
+    }
+    return ok;
+}
+
+bool TestRuntimeUsesRecordedProviderIntent()
+{
+    xrSim::WorldState state;
+    const xrSim::Handle region = state.CreateRegion("debug_region", 100);
+    const xrSim::Handle species = state.CreateSpecies("blind_dog");
+    xrSim::Result result = state.SetPopulation(region, species, 50);
+    bool ok = Expect(result.ok, "recorded provider setup accepts population");
+
+    xrSim::AgentProviderResult wake;
+    wake.ok = true;
+    wake.provider = "recorded";
+    wake.model = "fixture";
+    xrSim::AgentIntent intent;
+    intent.tool = "adjust_population";
+    intent.region = "debug_region";
+    intent.species = "blind_dog";
+    intent.delta = 7;
+    wake.intents.push_back(intent);
+
+    std::vector<xrSim::AgentProviderResult> script;
+    script.push_back(wake);
+    xrSim::RecordedAgentProvider provider(script);
+    xrSim::NullAgentRuntime runtime;
+    runtime.SetProvider(&provider);
+
+    result = runtime.Wake(state, 9);
+    ok = Expect(result.ok, "runtime accepts recorded provider intent") && ok;
+    ok = Expect(result.appliedDelta == 7, "runtime applies recorded provider delta") && ok;
+    ok = Expect(state.Population(region, species) == 57, "runtime mutates state from provider intent") && ok;
+    ok = Expect(state.ToolLog().size() == 1, "runtime logs recorded provider intent") && ok;
+    ok = Expect(state.ToolLog().back().gameDay == 9, "runtime records provider game day") && ok;
+    ok = Expect(runtime.LastProviderResult().provider == "recorded", "runtime exposes last provider id") && ok;
+    ok = Expect(runtime.LastProviderResult().model == "fixture", "runtime exposes last provider model") && ok;
+    return ok;
+}
+
+bool TestRecordedProviderExhaustionFailsAsValue()
+{
+    std::vector<xrSim::AgentProviderResult> script;
+    xrSim::RecordedAgentProvider provider(script);
+    xrSim::AgentWakeContext context;
+    context.agentId = 1;
+
+    const xrSim::AgentProviderResult result = provider.Wake(context);
+    bool ok = Expect(!result.ok, "recorded provider exhaustion fails as a value");
+    ok = Expect(result.error.find("exhausted") != std::string::npos, "recorded provider explains exhaustion") && ok;
+    return ok;
+}
+
+bool TestAgentPromptIncludesObservationAndToolSchema()
+{
+    xrSim::AgentWakeContext context;
+    context.agentId = 7;
+    context.gameDay = 11;
+    context.observation = "regions=1 species=1 cohorts=1 log=0 pop{debug_region:blind_dog=50}";
+
+    const std::string prompt = xrSim::BuildAgentWakePrompt(context);
+    bool ok = Expect(prompt.find("xrsim_agent_wake_v1") == 0, "agent prompt has stable version header");
+    ok = Expect(prompt.find("agent_id 7") != std::string::npos, "agent prompt records agent id") && ok;
+    ok = Expect(prompt.find("game_day 11") != std::string::npos, "agent prompt records game day") && ok;
+    ok = Expect(prompt.find(context.observation) != std::string::npos, "agent prompt includes observation") && ok;
+    ok = Expect(prompt.find("intent adjust_population <region> <species> <delta:int>") != std::string::npos,
+        "agent prompt includes tool schema") && ok;
+    ok = Expect(prompt.find("coast") != std::string::npos, "agent prompt allows coast response") && ok;
+    return ok;
+}
+
+bool TestAgentResponseParserAcceptsIntentLines()
+{
+    const char* response =
+        "xrsim_agent_response_v1\n"
+        "intent adjust_population debug_region blind_dog -4\n"
+        "end\n";
+
+    const xrSim::AgentProviderResult result =
+        xrSim::ParseAgentProviderResponse(response, "anthropic", "claude-sonnet-5");
+    bool ok = Expect(result.ok, "agent response parser accepts valid response");
+    ok = Expect(result.provider == "anthropic", "agent response parser stamps provider") && ok;
+    ok = Expect(result.model == "claude-sonnet-5", "agent response parser stamps model") && ok;
+    ok = Expect(result.intents.size() == 1, "agent response parser emits one intent") && ok;
+    if (result.intents.size() == 1)
+    {
+        ok = Expect(result.intents[0].tool == "adjust_population", "agent response parser preserves tool") && ok;
+        ok = Expect(result.intents[0].region == "debug_region", "agent response parser preserves region") && ok;
+        ok = Expect(result.intents[0].species == "blind_dog", "agent response parser preserves species") && ok;
+        ok = Expect(result.intents[0].delta == -4, "agent response parser preserves delta") && ok;
+    }
+    return ok;
+}
+
+bool TestAgentResponseParserRejectsUnknownIntentAsValue()
+{
+    const char* response =
+        "xrsim_agent_response_v1\n"
+        "intent teleport debug_region blind_dog 4\n"
+        "end\n";
+
+    const xrSim::AgentProviderResult result =
+        xrSim::ParseAgentProviderResponse(response, "anthropic", "claude-sonnet-5");
+    bool ok = Expect(!result.ok, "agent response parser rejects unknown intent as a value");
+    ok = Expect(result.error.find("unknown intent") != std::string::npos, "agent response parser explains unknown intent") && ok;
+    return ok;
+}
+
+bool TestAgentResponseParserAcceptsCoastAsNormalValue()
+{
+    const char* response =
+        "xrsim_agent_response_v1\n"
+        "coast\n"
+        "end\n";
+
+    const xrSim::AgentProviderResult result =
+        xrSim::ParseAgentProviderResponse(response, "anthropic", "claude-sonnet-5");
+    bool ok = Expect(result.ok, "agent response parser accepts coast as normal value");
+    ok = Expect(result.coast, "agent response parser marks coast") && ok;
+    ok = Expect(result.intents.empty(), "agent response coast emits no intents") && ok;
+    return ok;
+}
+
+bool TestRecordedTextProviderParsesScriptedWake()
+{
+    std::vector<std::string> script;
+    script.push_back(
+        "xrsim_agent_response_v1\n"
+        "intent adjust_population debug_region blind_dog 6\n"
+        "end\n");
+
+    xrSim::RecordedTextAgentProvider provider("recorded-text", "fixture", script);
+    xrSim::AgentWakeContext context;
+    context.agentId = 1;
+
+    const xrSim::AgentProviderResult result = provider.Wake(context);
+    bool ok = Expect(result.ok, "recorded text provider parses scripted response");
+    ok = Expect(result.provider == "recorded-text", "recorded text provider stamps provider") && ok;
+    ok = Expect(result.model == "fixture", "recorded text provider stamps model") && ok;
+    ok = Expect(result.intents.size() == 1, "recorded text provider emits scripted intent") && ok;
+    if (result.intents.size() == 1)
+        ok = Expect(result.intents[0].delta == 6, "recorded text provider preserves scripted delta") && ok;
+    return ok;
+}
+
+bool TestRuntimeCoastsOnProviderCoastResult()
+{
+    xrSim::WorldState state;
+    const xrSim::Handle region = state.CreateRegion("debug_region", 100);
+    const xrSim::Handle species = state.CreateSpecies("blind_dog");
+    xrSim::Result result = state.SetPopulation(region, species, 50);
+    bool ok = Expect(result.ok, "coast provider setup accepts population");
+
+    xrSim::AgentProviderResult wake;
+    wake.ok = true;
+    wake.provider = "recorded";
+    wake.model = "fixture";
+    wake.coast = true;
+
+    std::vector<xrSim::AgentProviderResult> script;
+    script.push_back(wake);
+    xrSim::RecordedAgentProvider provider(script);
+    xrSim::NullAgentRuntime runtime;
+    runtime.SetProvider(&provider);
+
+    result = runtime.Wake(state, 12);
+    ok = Expect(result.ok, "runtime accepts provider coast") && ok;
+    ok = Expect(result.appliedDelta == 0, "runtime coast applies no delta") && ok;
+    ok = Expect(result.reason == "coast", "runtime coast reports coast reason") && ok;
+    ok = Expect(state.Population(region, species) == 50, "runtime coast leaves population unchanged") && ok;
+    ok = Expect(state.ToolLog().empty(), "runtime coast records no tool call") && ok;
+    ok = Expect(runtime.WakeCount() == 1, "runtime coast counts as completed wake") && ok;
+    return ok;
+}
+
 bool TestNullAgentWakeAppliesDeterministicIntent()
 {
     xrSim::WorldState state;
@@ -278,6 +474,16 @@ bool TestAgentBridgeAliases()
     ok = Expect(verbOk, "agent.list succeeds") && ok;
     ok = Expect(out == "id=1 scope=ZONE provider=null wakes=0 state=ready", "agent.list reports null zone agent") && ok;
 
+    out = xrSim::HandleBridgeVerb("agent.provider", "", verbOk);
+    ok = Expect(verbOk, "agent.provider succeeds") && ok;
+    ok = Expect(out == "id=1 provider=null model=deterministic-null", "agent.provider reports provider contract") && ok;
+
+    out = xrSim::HandleBridgeVerb("agent.prompt", "", verbOk);
+    ok = Expect(verbOk, "agent.prompt succeeds") && ok;
+    ok = Expect(out.find("xrsim_agent_wake_v1") == 0, "agent.prompt returns versioned prompt") && ok;
+    ok = Expect(out.find("regions=1 species=1 cohorts=1 log=0 pop{debug_region:blind_dog=50}") != std::string::npos,
+        "agent.prompt includes current observation") && ok;
+
     out = xrSim::HandleBridgeVerb("agent.wake", "1", verbOk);
     ok = Expect(verbOk, "agent.wake succeeds") && ok;
     ok = Expect(out == "xrsim wake applied_delta=5 wakes=1", "agent.wake maps to deterministic null wake") && ok;
@@ -299,6 +505,15 @@ int main()
     ok = TestSnapshotLoadRejectsBadVersionAsValue() && ok;
     ok = TestReplayToolLogReproducesRecordedDigest() && ok;
     ok = TestReplayDetectsDivergentBaseline() && ok;
+    ok = TestNullProviderReturnsDeterministicIntent() && ok;
+    ok = TestRuntimeUsesRecordedProviderIntent() && ok;
+    ok = TestRecordedProviderExhaustionFailsAsValue() && ok;
+    ok = TestAgentPromptIncludesObservationAndToolSchema() && ok;
+    ok = TestAgentResponseParserAcceptsIntentLines() && ok;
+    ok = TestAgentResponseParserRejectsUnknownIntentAsValue() && ok;
+    ok = TestAgentResponseParserAcceptsCoastAsNormalValue() && ok;
+    ok = TestRecordedTextProviderParsesScriptedWake() && ok;
+    ok = TestRuntimeCoastsOnProviderCoastResult() && ok;
     ok = TestNullAgentWakeAppliesDeterministicIntent() && ok;
     ok = TestBridgeDebugVerbs() && ok;
     ok = TestBridgeSnapshotVerbs() && ok;
