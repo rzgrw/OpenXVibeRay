@@ -9,6 +9,7 @@
 #include "xrSim/xrSimNullAgent.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <vector>
@@ -31,6 +32,52 @@ public:
     std::string seenModel;
     std::string seenPath;
     uint32_t calls = 0;
+};
+
+class ScopedEnvVar
+{
+public:
+    ScopedEnvVar(const char* name, const char* value) : m_name(name)
+    {
+        const char* previous = std::getenv(name);
+        if (previous)
+        {
+            m_hadPrevious = true;
+            m_previous = previous;
+        }
+        Set(value);
+    }
+
+    ~ScopedEnvVar()
+    {
+        if (m_hadPrevious)
+            Set(m_previous.c_str());
+        else
+            Unset();
+    }
+
+private:
+    void Set(const char* value)
+    {
+#if defined(_WIN32)
+        _putenv_s(m_name.c_str(), value);
+#else
+        setenv(m_name.c_str(), value, 1);
+#endif
+    }
+
+    void Unset()
+    {
+#if defined(_WIN32)
+        _putenv_s(m_name.c_str(), "");
+#else
+        unsetenv(m_name.c_str());
+#endif
+    }
+
+    std::string m_name;
+    bool m_hadPrevious = false;
+    std::string m_previous;
 };
 
 bool Expect(bool condition, const char* message)
@@ -323,6 +370,61 @@ bool TestAgentResponseParserAcceptsCoastAsNormalValue()
     bool ok = Expect(result.ok, "agent response parser accepts coast as normal value");
     ok = Expect(result.coast, "agent response parser marks coast") && ok;
     ok = Expect(result.intents.empty(), "agent response coast emits no intents") && ok;
+    return ok;
+}
+
+bool TestAgentResponseParserAcceptsEchoedMetadataBeforeCoast()
+{
+    const char* response =
+        "xrsim_agent_response_v1\n"
+        "agent_id 1\n"
+        "game_day 0\n"
+        "coast\n"
+        "end\n";
+
+    const xrSim::AgentProviderResult result =
+        xrSim::ParseAgentProviderResponse(response, "anthropic", "claude-sonnet-5");
+    bool ok = Expect(result.ok, "agent response parser accepts echoed metadata before coast");
+    ok = Expect(result.coast, "agent response parser keeps coast with echoed metadata") && ok;
+    ok = Expect(result.intents.empty(), "agent response echoed coast emits no intents") && ok;
+    return ok;
+}
+
+bool TestAgentResponseParserAcceptsActionCoastWithReason()
+{
+    const char* response =
+        "xrsim_agent_response_v1\n"
+        "agent_id 1\n"
+        "game_day 0\n"
+        "action coast\n"
+        "reason single_observation_no_trend_data population=50 stable_debug_region no_intervention_warranted\n"
+        "end\n";
+
+    const xrSim::AgentProviderResult result =
+        xrSim::ParseAgentProviderResponse(response, "anthropic", "claude-sonnet-5");
+    bool ok = Expect(result.ok, "agent response parser accepts action coast");
+    ok = Expect(result.coast, "agent response parser marks action coast") && ok;
+    ok = Expect(
+        result.coastReason == "single_observation_no_trend_data population=50 stable_debug_region no_intervention_warranted",
+        "agent response parser preserves action coast reason") && ok;
+    ok = Expect(result.intents.empty(), "agent response action coast emits no intents") && ok;
+    return ok;
+}
+
+bool TestAgentResponseParserFindsVersionAfterModelPreface()
+{
+    const char* response =
+        "Here is the response:\n"
+        "```text\n"
+        "xrsim_agent_response_v1\n"
+        "coast\n"
+        "end\n"
+        "```\n";
+
+    const xrSim::AgentProviderResult result =
+        xrSim::ParseAgentProviderResponse(response, "anthropic", "claude-sonnet-5");
+    bool ok = Expect(result.ok, "agent response parser finds version after model preface");
+    ok = Expect(result.coast, "agent response parser keeps coast inside fenced response") && ok;
     return ok;
 }
 
@@ -1273,6 +1375,15 @@ bool TestAgentBridgeAliases()
     out = xrSim::HandleBridgeVerb("agent.tree", "", verbOk);
     ok = Expect(verbOk, "agent.tree succeeds") && ok;
     ok = Expect(out == "ZONE#1 provider=null wakes=1 log=1", "agent.tree reports deterministic tree shape") && ok;
+
+    {
+        ScopedEnvVar provider("XRAY_AGENT_PROVIDER", "off");
+        ScopedEnvVar model("XRAY_AGENT_MODEL", "claude-sonnet-5-test");
+        out = xrSim::HandleBridgeVerb("agent.wake", "live", verbOk);
+    }
+    ok = Expect(verbOk, "agent.wake live succeeds when provider coasts") && ok;
+    ok = Expect(out == "xrsim live wake applied_delta=0 wakes=2 provider=off model=claude-sonnet-5-test coast=provider_disabled",
+        "agent.wake live routes through live provider config") && ok;
     return ok;
 }
 
@@ -1375,6 +1486,9 @@ int main()
     ok = TestAgentResponseParserAcceptsIntentLines() && ok;
     ok = TestAgentResponseParserRejectsUnknownIntentAsValue() && ok;
     ok = TestAgentResponseParserAcceptsCoastAsNormalValue() && ok;
+    ok = TestAgentResponseParserAcceptsEchoedMetadataBeforeCoast() && ok;
+    ok = TestAgentResponseParserAcceptsActionCoastWithReason() && ok;
+    ok = TestAgentResponseParserFindsVersionAfterModelPreface() && ok;
     ok = TestActuatorConvertsSquadIntentToCommands() && ok;
     ok = TestActuatorRejectsIllegalPackVerbAsValue() && ok;
     ok = TestActuatorAppliesPopulationToolThroughWorldState() && ok;

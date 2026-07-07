@@ -597,7 +597,18 @@ AgentProviderResult ParseAgentProviderResponse(
 {
     std::istringstream input(text);
     std::string line;
-    if (!std::getline(input, line) || line != "xrsim_agent_response_v1")
+    bool sawVersion = false;
+    while (std::getline(input, line))
+    {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        if (line == "xrsim_agent_response_v1")
+        {
+            sawVersion = true;
+            break;
+        }
+    }
+    if (!sawVersion)
         return FailResponse(provider, model, "unsupported agent response version");
 
     AgentProviderResult result;
@@ -608,6 +619,8 @@ AgentProviderResult ParseAgentProviderResponse(
     bool sawEnd = false;
     while (std::getline(input, line))
     {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
         if (line.empty())
             continue;
         if (line == "end")
@@ -621,6 +634,35 @@ AgentProviderResult ParseAgentProviderResponse(
                 return FailResponse(provider, model, "coast cannot be mixed with intents");
             result.coast = true;
             continue;
+        }
+        if (line == "action coast")
+        {
+            if (!result.intents.empty())
+                return FailResponse(provider, model, "coast cannot be mixed with intents");
+            result.coast = true;
+            continue;
+        }
+        if (line.rfind("reason ", 0) == 0)
+        {
+            if (!result.coast)
+                return FailResponse(provider, model, "reason requires coast");
+            result.coastReason = line.substr(7);
+            continue;
+        }
+
+        {
+            std::istringstream metadata(line);
+            std::string key;
+            std::string valueText;
+            std::string extra;
+            if ((metadata >> key >> valueText) && !(metadata >> extra) &&
+                (key == "agent_id" || key == "game_day"))
+            {
+                uint32_t ignored = 0;
+                if (!ParseUint32(valueText, ignored))
+                    return FailResponse(provider, model, "invalid agent response metadata");
+                continue;
+            }
         }
 
         std::istringstream record(line);

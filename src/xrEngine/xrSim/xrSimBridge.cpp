@@ -6,6 +6,7 @@
 #include "xrSim/xrSimWorldState.h"
 
 #include <cstdio>
+#include <memory>
 #include <sstream>
 
 namespace xrSim
@@ -112,16 +113,48 @@ std::string FormatToolLog()
     return out.str();
 }
 
-std::string WakeNullAgent(bool& ok)
+std::string WakeZoneAgent(IAgentProvider* provider, const char* label, bool& ok)
 {
     EnsureDebugWorld();
+    if (provider)
+        g_nullAgent.SetProvider(provider);
     const Result result = g_nullAgent.Wake(g_debugWorld, 0);
+    if (provider)
+        g_nullAgent.SetProvider(nullptr);
     ok = result.ok;
     if (!result.ok)
         return result.reason;
     g_nextSeq = uint32_t(g_debugWorld.ToolLog().size() + 1);
-    return "xrsim wake applied_delta=" + std::to_string(result.appliedDelta) +
-        " wakes=" + std::to_string(g_nullAgent.WakeCount());
+
+    std::ostringstream out;
+    out << label << " applied_delta=" << result.appliedDelta << " wakes=" << g_nullAgent.WakeCount();
+    if (provider)
+    {
+        const AgentProviderResult& providerResult = g_nullAgent.LastProviderResult();
+        out << " provider=" << providerResult.provider << " model=" << providerResult.model;
+        if (providerResult.coast)
+            out << " coast=" << providerResult.coastReason;
+        if (!providerResult.error.empty())
+            out << " error=" << providerResult.error;
+    }
+    return out.str();
+}
+
+std::string WakeNullAgent(bool& ok)
+{
+    return WakeZoneAgent(nullptr, "xrsim wake", ok);
+}
+
+std::string WakeLiveAgent(bool& ok)
+{
+    const AgentProviderConfig config = LoadAgentProviderConfigFromEnvironment();
+    std::unique_ptr<IAgentProvider> provider = CreateLiveAgentProvider(config);
+    if (!provider)
+    {
+        ok = false;
+        return "live provider unavailable";
+    }
+    return WakeZoneAgent(provider.get(), "xrsim live wake", ok);
 }
 
 ActorAgentRecord* FindDebugActor(const std::string& name)
@@ -249,6 +282,8 @@ std::string HandleBridgeVerb(const std::string& verb, const std::string& payload
 
     if (verb == "agent.wake")
     {
+        if (payload == "live")
+            return WakeLiveAgent(ok);
         if (!payload.empty() && payload != "1")
         {
             ok = false;
