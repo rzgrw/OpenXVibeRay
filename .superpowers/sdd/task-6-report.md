@@ -110,3 +110,36 @@ These did not fail the build and were not changed by Task 6.
 ## Concerns
 
 - The full Python test suite prints an expected dry-run failure line from `test_live_cli_fails_nonzero_process_returncode` after the unittest `OK` summary (`run 1/1: FAIL -> .../report.txt`). The test itself still passes; this appears to be expected harness output, not a suite failure.
+
+## Fix Follow-Up
+
+### Changed Files
+
+- `/Users/rz/OpenXVibeRay/tools/tests/test_gl_macos_soak.py`
+- `/Users/rz/OpenXVibeRay/tools/ai_thin_harness_smoke.txt`
+
+### What Changed
+
+- Tightened `test_ai_thin_harness_smoke_script_exercises_actor_verbs` from presence checks to an ordered bridge-command sequence assertion over the `ai.reset` through `ai.log` window.
+- This now verifies both order and multiplicity, including that `agent.actor.commands` appears once after the squad wake and once after the mutant-pack wake.
+- Updated the smoke script header comment to the sharper handover phrasing: `LLM owns decisions, C++ owns embodiment.`
+
+### Exact Commands Run
+
+```bash
+python3 -m unittest tools.tests.test_gl_macos_soak.DryRunCliTests.test_ai_thin_harness_smoke_script_exercises_actor_verbs -v
+python3 -m unittest tools.tests.test_gl_macos_soak.DryRunCliTests.test_ai_thin_harness_smoke_script_exercises_actor_verbs -v
+python3 -m unittest tools.tests.test_gl_macos_soak -v
+cmake --build build -j10 --target xrSimWorldStateTests
+./bin/arm64/Release/xrSimWorldStateTests
+cmake --build build -j10 --target xr_3da
+```
+
+### Output Summary
+
+- First focused dry-run test run: failed as expected while tightening the assertion, showing the old check was comparing the wrong command window (`hello` and `cmd quit` were still in the full bridge list).
+- Second focused dry-run test run: `Ran 1 test` / `OK`.
+- Full Python suite: `Ran 24 tests in 0.006s` / `OK`.
+- `xrSimWorldStateTests` target build: passed.
+- `./bin/arm64/Release/xrSimWorldStateTests`: exited 0 with no output.
+- `xr_3da` target build: passed.

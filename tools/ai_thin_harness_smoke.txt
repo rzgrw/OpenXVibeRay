@@ -1,4 +1,4 @@
-# Thin-harness debug AI smoke: proves LLM-style actor intents are reachable over the bridge.
+# Thin-harness debug AI smoke: LLM owns decisions, C++ owns embodiment.
 hello
 ai.reset
 agent.provider live
