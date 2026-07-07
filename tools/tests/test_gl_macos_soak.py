@@ -171,5 +171,50 @@ class LiveCliTests(unittest.TestCase):
             self.assertEqual(1, rc)
 
 
+class SummaryValidationTests(unittest.TestCase):
+    def test_evaluate_summary_passes_clean_run(self):
+        from tools.gl_macos_soak import evaluate_summary
+
+        summary = {
+            "timed_out": False,
+            "exception": "",
+            "bridge_failures": [],
+            "process_returncode": 0,
+            "log_findings": [],
+            "states": [{"state": {"scene": "game", "frame": "100"}}],
+            "rss_high_water_kb": 123,
+            "longest_frame_stall_sec": 1.0,
+        }
+
+        passed, failures = evaluate_summary(summary)
+        self.assertTrue(passed)
+        self.assertEqual([], failures)
+
+    def test_evaluate_summary_reports_failures(self):
+        from tools.gl_macos_soak import evaluate_summary
+
+        summary = {
+            "timed_out": True,
+            "exception": "socket did not appear",
+            "bridge_failures": [{"command": "state", "response": "err"}],
+            "process_returncode": None,
+            "log_findings": ["FATAL ERROR"],
+            "states": [],
+            "rss_high_water_kb": None,
+            "longest_frame_stall_sec": 11.5,
+        }
+
+        passed, failures = evaluate_summary(summary)
+        self.assertFalse(passed)
+        self.assertIn("scenario timed out", failures)
+        self.assertIn("exception: socket did not appear", failures)
+        self.assertIn("bridge command failed: state -> err", failures)
+        self.assertIn("process did not exit cleanly: None", failures)
+        self.assertIn("log finding: FATAL ERROR", failures)
+        self.assertIn("no state samples recorded", failures)
+        self.assertIn("no RSS samples recorded", failures)
+        self.assertIn("frame stall exceeded 10 seconds: 11.5", failures)
+
+
 if __name__ == "__main__":
     unittest.main()

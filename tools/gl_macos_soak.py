@@ -306,6 +306,48 @@ def run_scenario(args: argparse.Namespace, steps: list[ScenarioStep]) -> dict[st
     return summary
 
 
+def evaluate_summary(summary: dict[str, Any]) -> tuple[bool, list[str]]:
+    failures: list[str] = []
+    if summary.get("timed_out"):
+        failures.append("scenario timed out")
+    if summary.get("exception"):
+        failures.append(f"exception: {summary['exception']}")
+    for failure in summary.get("bridge_failures", []):
+        failures.append(f"bridge command failed: {failure['command']} -> {failure['response']}")
+    if summary.get("process_returncode") != 0:
+        failures.append(f"process did not exit cleanly: {summary.get('process_returncode')}")
+    for finding in summary.get("log_findings", []):
+        failures.append(f"log finding: {finding}")
+    if not summary.get("states"):
+        failures.append("no state samples recorded")
+    if summary.get("rss_high_water_kb") is None:
+        failures.append("no RSS samples recorded")
+    stall = float(summary.get("longest_frame_stall_sec") or 0.0)
+    if stall > 10.0:
+        failures.append(f"frame stall exceeded 10 seconds: {stall}")
+    return not failures, failures
+
+
+def write_report(path: Path, summary: dict[str, Any], passed: bool, failures: list[str]) -> None:
+    lines = [
+        f"GL macOS soak: {'PASS' if passed else 'FAIL'}",
+        f"scenario: {summary.get('scenario')}",
+        f"duration_sec: {summary.get('duration_sec')}",
+        f"process_returncode: {summary.get('process_returncode')}",
+        f"rss_high_water_kb: {summary.get('rss_high_water_kb')}",
+        f"longest_frame_stall_sec: {summary.get('longest_frame_stall_sec')}",
+        f"log_copy: {summary.get('log_copy')}",
+        "",
+        "failures:",
+    ]
+    if failures:
+        lines.extend(f"- {failure}" for failure in failures)
+    else:
+        lines.append("- none")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="parse inputs and write a dry-run summary")
@@ -316,6 +358,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--socket", type=Path, default=DEFAULT_SOCKET_REL)
     parser.add_argument("--sample-interval", type=float, default=1.0)
     parser.add_argument("--timeout", type=float, default=900.0)
+    parser.add_argument("--repeat", type=int, default=1)
     args = parser.parse_args(argv)
 
     steps = parse_scenario_file(args.scenario)
@@ -329,11 +372,34 @@ def main(argv: list[str] | None = None) -> int:
         print(f"dry-run ok: {len(steps)} steps")
         return 0
 
-    summary = run_scenario(args, steps)
-    print(f"summary: {args.artifacts / 'summary.json'}")
-    if summary["timed_out"] or summary["exception"] or summary["bridge_failures"] or summary["process_returncode"] != 0:
-        return 1
-    return 0
+    all_passed = True
+    run_summaries: list[dict[str, Any]] = []
+    for index in range(args.repeat):
+        run_artifacts = args.artifacts if args.repeat == 1 else args.artifacts / f"run_{index + 1:02d}"
+        run_args = argparse.Namespace(**{**vars(args), "artifacts": run_artifacts})
+        summary = run_scenario(run_args, steps)
+        passed, failures = evaluate_summary(summary)
+        write_report(run_artifacts / "report.txt", summary, passed, failures)
+        summary["passed"] = passed
+        summary["failures"] = failures
+        write_json(run_artifacts / "summary.json", summary)
+        run_summaries.append({
+            "artifacts": str(run_artifacts),
+            "passed": passed,
+            "failures": failures,
+            "rss_high_water_kb": summary.get("rss_high_water_kb"),
+            "longest_frame_stall_sec": summary.get("longest_frame_stall_sec"),
+        })
+        print(f"run {index + 1}/{args.repeat}: {'PASS' if passed else 'FAIL'} -> {run_artifacts / 'report.txt'}")
+        all_passed = all_passed and passed
+
+    if args.repeat > 1:
+        write_json(args.artifacts / "summary.json", {
+            "repeat": args.repeat,
+            "passed": all_passed,
+            "runs": run_summaries,
+        })
+    return 0 if all_passed else 1
 
 
 if __name__ == "__main__":
