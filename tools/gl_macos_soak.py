@@ -162,6 +162,32 @@ def longest_frame_stall_sec(samples: list[dict[str, Any]]) -> float:
     return longest
 
 
+def expected_screenshots(steps: list[ScenarioStep]) -> list[str]:
+    names: list[str] = []
+    for step in steps:
+        if step.kind != "bridge":
+            continue
+        verb, payload = step.args
+        if verb == "shot" and payload:
+            names.append(payload.split()[0])
+    return names
+
+
+def collect_screenshot_status(game_dir: Path, names: list[str]) -> list[dict[str, Any]]:
+    screenshot_dir = game_dir / "appdata" / "screenshots"
+    status: list[dict[str, Any]] = []
+    for name in names:
+        path = screenshot_dir / f"{name}.jpg"
+        exists = path.exists()
+        status.append({
+            "name": name,
+            "path": str(path),
+            "exists": exists,
+            "size": path.stat().st_size if exists else 0,
+        })
+    return status
+
+
 def bounded_sleep_seconds(requested_seconds: float, remaining_seconds: float) -> tuple[float, bool]:
     if remaining_seconds <= 0.0:
         return 0.0, True
@@ -283,6 +309,7 @@ def run_scenario(args: argparse.Namespace, steps: list[ScenarioStep]) -> dict[st
     log_copy.write_text(log_text)
 
     duration_sec = round(time.monotonic() - started, 3)
+    screenshots = collect_screenshot_status(game_dir, expected_screenshots(steps))
     summary = {
         "dry_run": False,
         "scenario": str(args.scenario),
@@ -301,6 +328,7 @@ def run_scenario(args: argparse.Namespace, steps: list[ScenarioStep]) -> dict[st
         "longest_frame_stall_sec": longest_frame_stall_sec(states),
         "log_findings": scan_log_text(log_text),
         "log_copy": str(log_copy),
+        "screenshots": screenshots,
     }
     write_json(artifacts / "summary.json", summary)
     return summary
@@ -318,6 +346,9 @@ def evaluate_summary(summary: dict[str, Any]) -> tuple[bool, list[str]]:
         failures.append(f"process did not exit cleanly: {summary.get('process_returncode')}")
     for finding in summary.get("log_findings", []):
         failures.append(f"log finding: {finding}")
+    for shot in summary.get("screenshots", []):
+        if not shot.get("exists") or int(shot.get("size") or 0) <= 0:
+            failures.append(f"screenshot missing or empty: {shot.get('name')}")
     if not summary.get("states"):
         failures.append("no state samples recorded")
     if summary.get("rss_high_water_kb") is None:

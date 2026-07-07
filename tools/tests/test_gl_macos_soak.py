@@ -216,5 +216,30 @@ class SummaryValidationTests(unittest.TestCase):
         self.assertIn("frame stall exceeded 10 seconds: 11.5", failures)
 
 
+class ScreenshotTests(unittest.TestCase):
+    def test_expected_screenshots_from_steps(self):
+        from tools.gl_macos_soak import expected_screenshots
+
+        steps = parse_scenario_lines(["shot first", "state", "shot second"])
+
+        self.assertEqual(["first", "second"], expected_screenshots(steps))
+
+    def test_collect_screenshot_status(self):
+        from tools.gl_macos_soak import collect_screenshot_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            game_dir = Path(tmp)
+            screenshot_dir = game_dir / "appdata" / "screenshots"
+            screenshot_dir.mkdir(parents=True)
+            (screenshot_dir / "exists.jpg").write_bytes(b"jpg")
+
+            status = collect_screenshot_status(game_dir, ["exists", "missing"])
+
+            self.assertEqual([
+                {"name": "exists", "path": str(screenshot_dir / "exists.jpg"), "exists": True, "size": 3},
+                {"name": "missing", "path": str(screenshot_dir / "missing.jpg"), "exists": False, "size": 0},
+            ], status)
+
+
 if __name__ == "__main__":
     unittest.main()
