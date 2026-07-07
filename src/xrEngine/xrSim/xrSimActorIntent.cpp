@@ -121,36 +121,38 @@ ActorIntentParseResult ParseActorIntentPlan(const std::string& text)
         {
             ActorAction action;
             std::string amountText;
-            if (!(record >> action.verb >> action.target))
+            if (!(record >> action.verb))
                 return FailActorIntent("invalid action record");
 
-            if (record >> action.arg0)
+            if (record >> action.target)
             {
-                if (record >> action.arg1)
+                if (record >> action.arg0)
                 {
-                    if (record >> amountText)
+                    if (record >> action.arg1)
                     {
-                        if (!ParseInt32Token(amountText, action.amount) || !HasNoTrailingTokens(record))
+                        if (record >> amountText)
+                        {
+                            if (!ParseInt32Token(amountText, action.amount) || !HasNoTrailingTokens(record))
+                                return FailActorIntent("invalid action amount");
+                        }
+                        else if (!HasNoTrailingTokens(record))
+                        {
                             return FailActorIntent("invalid action amount");
+                        }
                     }
                     else if (!HasNoTrailingTokens(record))
                     {
                         return FailActorIntent("invalid action amount");
                     }
                 }
-                else if (!HasNoTrailingTokens(record))
-                {
-                    return FailActorIntent("invalid action amount");
-                }
-            }
-            else if (!HasNoTrailingTokens(record))
-            {
-                return FailActorIntent("invalid action amount");
             }
             else
             {
+                action.target.clear();
                 action.arg0.clear();
                 action.arg1.clear();
+                if (!HasNoTrailingTokens(record))
+                    return FailActorIntent("invalid action amount");
             }
 
             result.plan.actions.push_back(action);

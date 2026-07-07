@@ -617,6 +617,43 @@ bool TestActorIntentParserAcceptsCoast()
     return ok;
 }
 
+bool TestActorIntentParserSupportsVerbOnlyActionFormatRoundTrip()
+{
+    const xrSim::ActorIntentParseResult parsed = xrSim::ParseActorIntentPlan(
+        "xrsim_actor_intent_v1\n"
+        "action wait\n"
+        "end\n");
+    bool ok = Expect(parsed.ok, "actor intent parser accepts verb-only action");
+    ok = Expect(parsed.plan.actions.size() == 1, "actor intent verb-only action keeps action count") && ok;
+    if (parsed.plan.actions.size() == 1)
+    {
+        ok = Expect(parsed.plan.actions[0].verb == "wait", "actor intent verb-only action keeps verb") && ok;
+        ok = Expect(parsed.plan.actions[0].target.empty(), "actor intent verb-only action keeps empty target") && ok;
+        ok = Expect(parsed.plan.actions[0].arg0.empty(), "actor intent verb-only action keeps empty arg0") && ok;
+        ok = Expect(parsed.plan.actions[0].arg1.empty(), "actor intent verb-only action keeps empty arg1") && ok;
+        ok = Expect(parsed.plan.actions[0].amount == 0, "actor intent verb-only action keeps zero amount") && ok;
+    }
+
+    xrSim::ActorIntentPlan plan;
+    plan.actions.push_back(xrSim::ActorAction{ "wait", "", "", "", 0 });
+    const std::string text = xrSim::FormatActorIntentPlan(plan);
+    const xrSim::ActorIntentParseResult roundTripped = xrSim::ParseActorIntentPlan(text);
+    ok = Expect(roundTripped.ok, "actor intent verb-only action round-trips through formatter") && ok;
+    if (roundTripped.ok)
+    {
+        ok = Expect(roundTripped.plan.actions.size() == 1, "actor intent verb-only action format round-trip keeps action count") && ok;
+        if (roundTripped.plan.actions.size() == 1)
+        {
+            ok = Expect(roundTripped.plan.actions[0].verb == "wait", "actor intent verb-only action format round-trip keeps verb") && ok;
+            ok = Expect(roundTripped.plan.actions[0].target.empty(), "actor intent verb-only action format round-trip keeps empty target") && ok;
+            ok = Expect(roundTripped.plan.actions[0].arg0.empty(), "actor intent verb-only action format round-trip keeps empty arg0") && ok;
+            ok = Expect(roundTripped.plan.actions[0].arg1.empty(), "actor intent verb-only action format round-trip keeps empty arg1") && ok;
+            ok = Expect(roundTripped.plan.actions[0].amount == 0, "actor intent verb-only action format round-trip keeps zero amount") && ok;
+        }
+    }
+    return ok;
+}
+
 bool TestActorIntentParserRejectsTrailingTokens()
 {
     struct Case
@@ -633,6 +670,10 @@ bool TestActorIntentParserRejectsTrailingTokens()
         {
             "xrsim_actor_intent_v1\naction move_to cover_node_12 burst_short 7 extra\nend\n",
             "actor intent parser rejects extra action token",
+        },
+        {
+            "xrsim_actor_intent_v1\naction move_to cover_node_12 burst_short arg bad_amount\nend\n",
+            "actor intent parser rejects non-int action amount",
         },
     };
 
@@ -877,6 +918,7 @@ int main()
     ok = TestAnthropicHttpTransportFactoryMatchesAvailability() && ok;
     ok = TestActorIntentParserAcceptsSquadPlan() && ok;
     ok = TestActorIntentParserAcceptsCoast() && ok;
+    ok = TestActorIntentParserSupportsVerbOnlyActionFormatRoundTrip() && ok;
     ok = TestActorIntentParserRejectsTrailingTokens() && ok;
     ok = TestActorIntentParserRejectsMixedCoastAndMetadataOrActions() && ok;
     ok = TestActorIntentParserRoundTripsFormat() && ok;
