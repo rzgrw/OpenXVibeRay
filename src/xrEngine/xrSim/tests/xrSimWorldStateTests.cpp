@@ -9,6 +9,24 @@
 
 namespace
 {
+class FakeAnthropicTransport : public xrSim::IAnthropicTransport
+{
+public:
+    xrSim::AnthropicTransportResult Send(
+        const xrSim::AgentProviderConfig& config, const xrSim::AnthropicMessagesRequest& request) override
+    {
+        seenModel = config.model;
+        seenPath = request.path;
+        ++calls;
+        return result;
+    }
+
+    xrSim::AnthropicTransportResult result;
+    std::string seenModel;
+    std::string seenPath;
+    uint32_t calls = 0;
+};
+
 bool Expect(bool condition, const char* message)
 {
     if (condition)
@@ -477,6 +495,67 @@ bool TestAnthropicTextResponseParsesThroughAgentCodec()
     return ok;
 }
 
+bool TestAnthropicProviderShellUsesInjectedTransport()
+{
+    xrSim::AgentProviderConfig config;
+    config.provider = "anthropic";
+    config.model = "claude-sonnet-5";
+    config.apiKey = "secret";
+
+    FakeAnthropicTransport transport;
+    transport.result.ok = true;
+    transport.result.status = 200;
+    transport.result.latencyMs = 44;
+    transport.result.body =
+        "{\"content\":[{\"type\":\"text\",\"text\":\"xrsim_agent_response_v1\\n"
+        "intent adjust_population debug_region blind_dog 3\\nend\\n\"}]}";
+
+    xrSim::AnthropicAgentProviderShell provider(config);
+    provider.SetTransport(&transport);
+
+    xrSim::AgentWakeContext context;
+    context.agentId = 1;
+    context.gameDay = 2;
+    context.observation = "regions=1 species=1 cohorts=1 log=0 pop{debug_region:blind_dog=50}";
+
+    const xrSim::AgentProviderResult result = provider.Wake(context);
+    bool ok = Expect(result.ok, "anthropic shell accepts injected transport response");
+    ok = Expect(!result.coast, "anthropic shell transport response is not coast") && ok;
+    ok = Expect(result.intents.size() == 1, "anthropic shell transport emits one intent") && ok;
+    if (result.intents.size() == 1)
+        ok = Expect(result.intents[0].delta == 3, "anthropic shell transport preserves delta") && ok;
+    ok = Expect(transport.calls == 1, "anthropic shell calls injected transport once") && ok;
+    ok = Expect(transport.seenModel == "claude-sonnet-5", "anthropic shell transport sees model") && ok;
+    ok = Expect(transport.seenPath == "/v1/messages", "anthropic shell transport sees messages path") && ok;
+    return ok;
+}
+
+bool TestAnthropicProviderShellCoastsOnTransportFailure()
+{
+    xrSim::AgentProviderConfig config;
+    config.provider = "anthropic";
+    config.model = "claude-sonnet-5";
+    config.apiKey = "secret";
+
+    FakeAnthropicTransport transport;
+    transport.result.ok = false;
+    transport.result.error = "timeout";
+    transport.result.latencyMs = 600;
+
+    xrSim::AnthropicAgentProviderShell provider(config);
+    provider.SetTransport(&transport);
+
+    xrSim::AgentWakeContext context;
+    context.agentId = 1;
+
+    const xrSim::AgentProviderResult result = provider.Wake(context);
+    bool ok = Expect(result.ok, "anthropic shell transport failure succeeds as coast");
+    ok = Expect(result.coast, "anthropic shell transport failure marks coast") && ok;
+    ok = Expect(result.coastReason == "transport_error", "anthropic shell transport failure records coast reason") && ok;
+    ok = Expect(result.error == "timeout", "anthropic shell transport failure keeps error detail") && ok;
+    return ok;
+}
+
 bool TestNullAgentWakeAppliesDeterministicIntent()
 {
     xrSim::WorldState state;
@@ -648,6 +727,8 @@ int main()
     ok = TestAgentProviderLedgerFormatsReplayMetadata() && ok;
     ok = TestAnthropicRequestEnvelopeUsesMessagesApiShape() && ok;
     ok = TestAnthropicTextResponseParsesThroughAgentCodec() && ok;
+    ok = TestAnthropicProviderShellUsesInjectedTransport() && ok;
+    ok = TestAnthropicProviderShellCoastsOnTransportFailure() && ok;
     ok = TestNullAgentWakeAppliesDeterministicIntent() && ok;
     ok = TestBridgeDebugVerbs() && ok;
     ok = TestBridgeSnapshotVerbs() && ok;

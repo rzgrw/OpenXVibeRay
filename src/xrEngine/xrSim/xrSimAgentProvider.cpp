@@ -149,18 +149,35 @@ AgentProviderResult NullAgentProvider::Wake(const AgentWakeContext& context)
 
 AnthropicAgentProviderShell::AnthropicAgentProviderShell(const AgentProviderConfig& config) : m_config(config) {}
 
+void AnthropicAgentProviderShell::SetTransport(IAnthropicTransport* transport) { m_transport = transport; }
+
 AgentProviderResult AnthropicAgentProviderShell::Wake(const AgentWakeContext& context)
 {
-    (void)context;
-
     if (!m_config.enabled)
         return CoastResponse(m_config.provider, m_config.model, "provider_disabled");
     if (m_config.provider != "anthropic")
         return CoastResponse(m_config.provider, m_config.model, "unsupported_provider");
     if (m_config.apiKey.empty())
         return CoastResponse(m_config.provider, m_config.model, "missing_api_key");
+    if (!m_transport)
+        return CoastResponse(m_config.provider, m_config.model, "network_adapter_not_linked");
 
-    return CoastResponse(m_config.provider, m_config.model, "network_adapter_not_linked");
+    const AnthropicMessagesRequest request = BuildAnthropicMessagesRequest(m_config, context, 1024);
+    const AnthropicTransportResult transportResult = m_transport->Send(m_config, request);
+    if (!transportResult.ok)
+    {
+        AgentProviderResult result = CoastResponse(m_config.provider, m_config.model, "transport_error");
+        result.error = transportResult.error;
+        return result;
+    }
+    if (transportResult.status != 200)
+    {
+        AgentProviderResult result = CoastResponse(m_config.provider, m_config.model, "http_status");
+        result.error = std::to_string(transportResult.status);
+        return result;
+    }
+
+    return ParseAnthropicMessagesTextResponse(transportResult.body, m_config.provider, m_config.model);
 }
 
 RecordedAgentProvider::RecordedAgentProvider(const std::vector<AgentProviderResult>& script) : m_script(script) {}

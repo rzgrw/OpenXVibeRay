@@ -57,6 +57,23 @@ struct AnthropicMessagesRequest
     std::string body;
 };
 
+struct AnthropicTransportResult
+{
+    bool ok = false;
+    uint32_t status = 0;
+    uint32_t latencyMs = 0;
+    std::string body;
+    std::string error;
+};
+
+class IAnthropicTransport
+{
+public:
+    virtual ~IAnthropicTransport() = default;
+    virtual AnthropicTransportResult Send(
+        const AgentProviderConfig& config, const AnthropicMessagesRequest& request) = 0;
+};
+
 class IAgentProvider
 {
 public:
@@ -75,10 +92,12 @@ class AnthropicAgentProviderShell : public IAgentProvider
 public:
     explicit AnthropicAgentProviderShell(const AgentProviderConfig& config);
 
+    void SetTransport(IAnthropicTransport* transport);
     AgentProviderResult Wake(const AgentWakeContext& context) override;
 
 private:
     AgentProviderConfig m_config;
+    IAnthropicTransport* m_transport = nullptr;
 };
 
 class RecordedAgentProvider : public IAgentProvider
