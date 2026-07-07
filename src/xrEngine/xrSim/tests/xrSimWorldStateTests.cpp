@@ -617,6 +617,81 @@ bool TestActorIntentParserAcceptsCoast()
     return ok;
 }
 
+bool TestActorIntentParserRejectsTrailingTokens()
+{
+    struct Case
+    {
+        const char* text;
+        const char* message;
+    };
+
+    const Case cases[] = {
+        {"xrsim_actor_intent_v1\ngoal survive_and_delay_player extra\nend\n", "actor intent parser rejects extra goal token"},
+        {"xrsim_actor_intent_v1\nstance cautious extra\nend\n", "actor intent parser rejects extra stance token"},
+        {"xrsim_actor_intent_v1\nduration_ms 3500 extra\nend\n", "actor intent parser rejects extra duration token"},
+        {"xrsim_actor_intent_v1\nmemory player_used_grenade_aggressively extra\nend\n", "actor intent parser rejects extra memory token"},
+        {
+            "xrsim_actor_intent_v1\naction move_to cover_node_12 burst_short 7 extra\nend\n",
+            "actor intent parser rejects extra action token",
+        },
+    };
+
+    bool ok = true;
+    for (const Case& currentCase : cases)
+    {
+        const xrSim::ActorIntentParseResult parsed = xrSim::ParseActorIntentPlan(currentCase.text);
+        ok = Expect(!parsed.ok, currentCase.message) && ok;
+    }
+
+    return ok;
+}
+
+bool TestActorIntentParserRejectsMixedCoastAndMetadataOrActions()
+{
+    const xrSim::ActorIntentParseResult mixedWithGoal =
+        xrSim::ParseActorIntentPlan("xrsim_actor_intent_v1\ngoal survive_and_delay_player\ncoast\nend\n");
+    bool ok = Expect(!mixedWithGoal.ok, "actor intent parser rejects goal mixed with coast");
+
+    const xrSim::ActorIntentParseResult mixedWithStance =
+        xrSim::ParseActorIntentPlan("xrsim_actor_intent_v1\ncoast\nstance cautious\nend\n");
+    ok = Expect(!mixedWithStance.ok, "actor intent parser rejects coast mixed with stance") && ok;
+
+    const xrSim::ActorIntentParseResult mixedWithDuration =
+        xrSim::ParseActorIntentPlan("xrsim_actor_intent_v1\ncoast\nduration_ms 2500\nend\n");
+    ok = Expect(!mixedWithDuration.ok, "actor intent parser rejects coast mixed with duration") && ok;
+
+    const xrSim::ActorIntentParseResult mixedWithMemory =
+        xrSim::ParseActorIntentPlan("xrsim_actor_intent_v1\ncoast\nmemory player_used_grenade_aggressively\nend\n");
+    ok = Expect(!mixedWithMemory.ok, "actor intent parser rejects coast mixed with memory") && ok;
+
+    const xrSim::ActorIntentParseResult mixedWithAction =
+        xrSim::ParseActorIntentPlan("xrsim_actor_intent_v1\ncoast\naction move_to cover_node_12\nend\n");
+    ok = Expect(!mixedWithAction.ok, "actor intent parser rejects coast mixed with action") && ok;
+
+    return ok;
+}
+
+bool TestActorIntentParserRoundTripsFormat()
+{
+    xrSim::ActorIntentPlan plan;
+    plan.goal = "survive_and_delay_player";
+    plan.stance = "cautious";
+    plan.durationMs = 3500;
+    plan.memories.push_back("player_used_grenade_aggressively");
+    plan.actions.push_back(xrSim::ActorAction{ "move_to", "cover_node_12", "", "", 0 });
+    plan.actions.push_back(xrSim::ActorAction{ "fire_pattern", "target_player", "burst_short", "", 0 });
+
+    const std::string text = xrSim::FormatActorIntentPlan(plan);
+    const xrSim::ActorIntentParseResult parsed = xrSim::ParseActorIntentPlan(text);
+    bool ok = Expect(parsed.ok, "actor intent parser round-trip format input is valid");
+    ok = Expect(parsed.plan.goal == plan.goal, "actor intent round trip preserves goal") && ok;
+    ok = Expect(parsed.plan.stance == plan.stance, "actor intent round trip preserves stance") && ok;
+    ok = Expect(parsed.plan.durationMs == plan.durationMs, "actor intent round trip preserves duration") && ok;
+    ok = Expect(parsed.plan.actions.size() == plan.actions.size(), "actor intent round trip preserves action count") && ok;
+    ok = Expect(parsed.plan.memories == plan.memories, "actor intent round trip preserves memories") && ok;
+    return ok;
+}
+
 bool TestActorIntentParserRejectsBadVersionAsValue()
 {
     const xrSim::ActorIntentParseResult parsed = xrSim::ParseActorIntentPlan("xrsim_actor_intent_v2\nend\n");
@@ -802,6 +877,9 @@ int main()
     ok = TestAnthropicHttpTransportFactoryMatchesAvailability() && ok;
     ok = TestActorIntentParserAcceptsSquadPlan() && ok;
     ok = TestActorIntentParserAcceptsCoast() && ok;
+    ok = TestActorIntentParserRejectsTrailingTokens() && ok;
+    ok = TestActorIntentParserRejectsMixedCoastAndMetadataOrActions() && ok;
+    ok = TestActorIntentParserRoundTripsFormat() && ok;
     ok = TestActorIntentParserRejectsBadVersionAsValue() && ok;
     ok = TestNullAgentWakeAppliesDeterministicIntent() && ok;
     ok = TestBridgeDebugVerbs() && ok;

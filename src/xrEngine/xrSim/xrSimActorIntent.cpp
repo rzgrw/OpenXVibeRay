@@ -42,6 +42,18 @@ bool ParseInt32Token(const std::string& text, int32_t& value)
     value = int32_t(parsed);
     return true;
 }
+
+bool HasNoTrailingTokens(std::istringstream& record)
+{
+    return (record >> std::ws).peek() == EOF;
+}
+
+bool ReadSingleToken(std::istringstream& record, std::string& value)
+{
+    if (!(record >> value))
+        return false;
+    return HasNoTrailingTokens(record);
+}
 } // namespace
 
 ActorIntentParseResult ParseActorIntentPlan(const std::string& text)
@@ -54,20 +66,31 @@ ActorIntentParseResult ParseActorIntentPlan(const std::string& text)
     ActorIntentParseResult result;
     result.ok = true;
 
+    bool seenGoal = false;
+    bool seenStance = false;
+    bool seenDuration = false;
+    bool seenAction = false;
+    bool seenMemory = false;
+
     bool sawEnd = false;
     while (std::getline(input, line))
     {
         if (line.empty())
             continue;
+
+        if (result.plan.coast && line != "coast" && line != "end")
+            return FailActorIntent("coast cannot be mixed with intent metadata");
+
         if (line == "end")
         {
             sawEnd = true;
             break;
         }
+
         if (line == "coast")
         {
-            if (!result.plan.actions.empty())
-                return FailActorIntent("coast cannot be mixed with actions");
+            if (seenAction || seenGoal || seenStance || seenDuration || seenMemory)
+                return FailActorIntent("coast cannot be mixed with intent metadata");
             result.plan.coast = true;
             continue;
         }
@@ -77,39 +100,69 @@ ActorIntentParseResult ParseActorIntentPlan(const std::string& text)
         record >> key;
         if (key == "goal")
         {
-            if (!(record >> result.plan.goal))
+            if (!ReadSingleToken(record, result.plan.goal))
                 return FailActorIntent("invalid goal record");
+            seenGoal = true;
         }
         else if (key == "stance")
         {
-            if (!(record >> result.plan.stance))
+            if (!ReadSingleToken(record, result.plan.stance))
                 return FailActorIntent("invalid stance record");
+            seenStance = true;
         }
         else if (key == "duration_ms")
         {
             std::string value;
-            if (!(record >> value) || !ParseUint32Token(value, result.plan.durationMs))
+            if (!ReadSingleToken(record, value) || !ParseUint32Token(value, result.plan.durationMs))
                 return FailActorIntent("invalid duration_ms record");
+            seenDuration = true;
         }
         else if (key == "action")
         {
-            if (result.plan.coast)
-                return FailActorIntent("coast cannot be mixed with actions");
             ActorAction action;
             std::string amountText;
-            record >> action.verb >> action.target >> action.arg0 >> action.arg1 >> amountText;
-            if (action.verb.empty())
+            if (!(record >> action.verb >> action.target))
                 return FailActorIntent("invalid action record");
-            if (!amountText.empty() && !ParseInt32Token(amountText, action.amount))
+
+            if (record >> action.arg0)
+            {
+                if (record >> action.arg1)
+                {
+                    if (record >> amountText)
+                    {
+                        if (!ParseInt32Token(amountText, action.amount) || !HasNoTrailingTokens(record))
+                            return FailActorIntent("invalid action amount");
+                    }
+                    else if (!HasNoTrailingTokens(record))
+                    {
+                        return FailActorIntent("invalid action amount");
+                    }
+                }
+                else if (!HasNoTrailingTokens(record))
+                {
+                    return FailActorIntent("invalid action amount");
+                }
+            }
+            else if (!HasNoTrailingTokens(record))
+            {
                 return FailActorIntent("invalid action amount");
+            }
+            else
+            {
+                action.arg0.clear();
+                action.arg1.clear();
+            }
+
             result.plan.actions.push_back(action);
+            seenAction = true;
         }
         else if (key == "memory")
         {
             std::string memory;
-            if (!(record >> memory))
+            if (!ReadSingleToken(record, memory))
                 return FailActorIntent("invalid memory record");
             result.plan.memories.push_back(memory);
+            seenMemory = true;
         }
         else
         {
