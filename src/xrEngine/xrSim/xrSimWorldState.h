@@ -45,6 +45,8 @@ class WorldState
 public:
     Handle CreateRegion(const std::string& name, int32_t carryingCapacity);
     Handle CreateSpecies(const std::string& name);
+    Handle FindRegionByName(const std::string& name) const;
+    Handle FindSpeciesByName(const std::string& name) const;
 
     Result SetPopulation(Handle region, Handle species, int32_t count);
     Result ApplyAdjustPopulation(uint32_t seq, Handle region, Handle species, int32_t delta, uint32_t gameDay);

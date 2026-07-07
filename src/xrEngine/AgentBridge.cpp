@@ -7,6 +7,7 @@ CAgentBridge* g_agent_bridge = nullptr;
 
 #include "XR_IOConsole.h"
 #include "IGame_Level.h"
+#include "xrSim/xrSimBridge.h"
 #include "xrScriptEngine/script_engine.hpp"
 #include <lua.hpp>
 
@@ -245,6 +246,8 @@ void CAgentBridge::HandleRequest(const std::string& line)
     else if (verb == "mouse") result = VerbMouse(payload, ok);
     else if (verb == "state") result = VerbState(ok);
     else if (verb == "shot")  result = VerbShot(payload, ok);
+    else if (verb.rfind("ai.", 0) == 0 || verb.rfind("agent.", 0) == 0)
+        result = xrSim::HandleBridgeVerb(verb, payload, ok);
     else { ok = false; result = "unknown verb: " + verb; }
 
     Respond(id, ok, result);

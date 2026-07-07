@@ -54,6 +54,26 @@ Handle WorldState::CreateSpecies(const std::string& name)
     return MakeHandle(uint32_t(m_species.size() - 1), species.generation);
 }
 
+Handle WorldState::FindRegionByName(const std::string& name) const
+{
+    for (size_t i = 0; i < m_regions.size(); ++i)
+    {
+        if (m_regions[i].name == name)
+            return MakeHandle(uint32_t(i), m_regions[i].generation);
+    }
+    return Handle::Invalid();
+}
+
+Handle WorldState::FindSpeciesByName(const std::string& name) const
+{
+    for (size_t i = 0; i < m_species.size(); ++i)
+    {
+        if (m_species[i].name == name)
+            return MakeHandle(uint32_t(i), m_species[i].generation);
+    }
+    return Handle::Invalid();
+}
+
 Result WorldState::SetPopulation(Handle region, Handle species, int32_t count)
 {
     const Region* regionRecord = FindRegion(region);

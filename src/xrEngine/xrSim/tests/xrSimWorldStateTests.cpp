@@ -1,4 +1,5 @@
 #include "xrSim/xrSimWorldState.h"
+#include "xrSim/xrSimBridge.h"
 
 #include <cstdio>
 #include <string>
@@ -67,6 +68,33 @@ bool TestDigestIsStable()
         "digest is stable and human-readable") && ok;
     return ok;
 }
+
+bool TestBridgeDebugVerbs()
+{
+    bool verbOk = false;
+    std::string out = xrSim::HandleBridgeVerb("ai.reset", "", verbOk);
+    bool ok = Expect(verbOk, "ai.reset succeeds");
+    ok = Expect(out.find("xrsim reset") != std::string::npos, "ai.reset reports reset") && ok;
+
+    out = xrSim::HandleBridgeVerb("ai.observe", "", verbOk);
+    ok = Expect(verbOk, "ai.observe succeeds") && ok;
+    ok = Expect(out == "regions=1 species=1 cohorts=1 log=0 pop{debug_region:blind_dog=50}",
+        "ai.observe reports deterministic debug digest") && ok;
+
+    out = xrSim::HandleBridgeVerb("ai.inject", "adjust_population debug_region blind_dog 500", verbOk);
+    ok = Expect(verbOk, "ai.inject succeeds") && ok;
+    ok = Expect(out == "accepted applied_delta=10", "ai.inject reports clamped delta") && ok;
+
+    out = xrSim::HandleBridgeVerb("ai.observe", "", verbOk);
+    ok = Expect(verbOk, "ai.observe after inject succeeds") && ok;
+    ok = Expect(out == "regions=1 species=1 cohorts=1 log=1 pop{debug_region:blind_dog=60}",
+        "ai.observe after inject reports updated digest") && ok;
+
+    out = xrSim::HandleBridgeVerb("ai.inject", "adjust_population debug_region snork 5", verbOk);
+    ok = Expect(!verbOk, "ai.inject unknown species fails") && ok;
+    ok = Expect(out.find("unknown species") != std::string::npos, "ai.inject unknown species explains failure") && ok;
+    return ok;
+}
 } // namespace
 
 int main()
@@ -75,5 +103,6 @@ int main()
     ok = TestAdjustPopulationClampsAndLogs() && ok;
     ok = TestMissingHandleFailsAsValue() && ok;
     ok = TestDigestIsStable() && ok;
+    ok = TestBridgeDebugVerbs() && ok;
     return ok ? 0 : 1;
 }
