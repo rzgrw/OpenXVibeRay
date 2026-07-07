@@ -1,6 +1,8 @@
 add_library(xrEngine)
 
 add_library(xrSimCore STATIC
+    xrSim/xrSimAgentProvider.cpp
+    xrSim/xrSimAgentProvider.h
     xrSim/xrSimBridge.cpp
     xrSim/xrSimBridge.h
     xrSim/xrSimNullAgent.cpp

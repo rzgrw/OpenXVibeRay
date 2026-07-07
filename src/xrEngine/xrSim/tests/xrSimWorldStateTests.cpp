@@ -1,9 +1,11 @@
+#include "xrSim/xrSimAgentProvider.h"
 #include "xrSim/xrSimWorldState.h"
 #include "xrSim/xrSimBridge.h"
 #include "xrSim/xrSimNullAgent.h"
 
 #include <cstdio>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -158,6 +160,78 @@ bool TestReplayDetectsDivergentBaseline()
     return ok;
 }
 
+bool TestNullProviderReturnsDeterministicIntent()
+{
+    xrSim::NullAgentProvider provider;
+    xrSim::AgentWakeContext context;
+    context.agentId = 1;
+    context.gameDay = 3;
+    context.observation = "regions=1 species=1 cohorts=1 log=0 pop{debug_region:blind_dog=50}";
+
+    const xrSim::AgentProviderResult result = provider.Wake(context);
+    bool ok = Expect(result.ok, "null provider succeeds without network");
+    ok = Expect(result.provider == "null", "null provider reports provider id") && ok;
+    ok = Expect(result.model == "deterministic-null", "null provider reports deterministic model") && ok;
+    ok = Expect(result.intents.size() == 1, "null provider emits one intent") && ok;
+    if (result.intents.size() == 1)
+    {
+        ok = Expect(result.intents[0].tool == "adjust_population", "null provider emits adjust_population") && ok;
+        ok = Expect(result.intents[0].region == "debug_region", "null provider targets debug region") && ok;
+        ok = Expect(result.intents[0].species == "blind_dog", "null provider targets blind dog") && ok;
+        ok = Expect(result.intents[0].delta == 5, "null provider emits deterministic delta") && ok;
+    }
+    return ok;
+}
+
+bool TestRuntimeUsesRecordedProviderIntent()
+{
+    xrSim::WorldState state;
+    const xrSim::Handle region = state.CreateRegion("debug_region", 100);
+    const xrSim::Handle species = state.CreateSpecies("blind_dog");
+    xrSim::Result result = state.SetPopulation(region, species, 50);
+    bool ok = Expect(result.ok, "recorded provider setup accepts population");
+
+    xrSim::AgentProviderResult wake;
+    wake.ok = true;
+    wake.provider = "recorded";
+    wake.model = "fixture";
+    xrSim::AgentIntent intent;
+    intent.tool = "adjust_population";
+    intent.region = "debug_region";
+    intent.species = "blind_dog";
+    intent.delta = 7;
+    wake.intents.push_back(intent);
+
+    std::vector<xrSim::AgentProviderResult> script;
+    script.push_back(wake);
+    xrSim::RecordedAgentProvider provider(script);
+    xrSim::NullAgentRuntime runtime;
+    runtime.SetProvider(&provider);
+
+    result = runtime.Wake(state, 9);
+    ok = Expect(result.ok, "runtime accepts recorded provider intent") && ok;
+    ok = Expect(result.appliedDelta == 7, "runtime applies recorded provider delta") && ok;
+    ok = Expect(state.Population(region, species) == 57, "runtime mutates state from provider intent") && ok;
+    ok = Expect(state.ToolLog().size() == 1, "runtime logs recorded provider intent") && ok;
+    ok = Expect(state.ToolLog().back().gameDay == 9, "runtime records provider game day") && ok;
+    ok = Expect(runtime.LastProviderResult().provider == "recorded", "runtime exposes last provider id") && ok;
+    ok = Expect(runtime.LastProviderResult().model == "fixture", "runtime exposes last provider model") && ok;
+    return ok;
+}
+
+bool TestRecordedProviderExhaustionFailsAsValue()
+{
+    std::vector<xrSim::AgentProviderResult> script;
+    xrSim::RecordedAgentProvider provider(script);
+    xrSim::AgentWakeContext context;
+    context.agentId = 1;
+
+    const xrSim::AgentProviderResult result = provider.Wake(context);
+    bool ok = Expect(!result.ok, "recorded provider exhaustion fails as a value");
+    ok = Expect(result.error.find("exhausted") != std::string::npos, "recorded provider explains exhaustion") && ok;
+    return ok;
+}
+
 bool TestNullAgentWakeAppliesDeterministicIntent()
 {
     xrSim::WorldState state;
@@ -278,6 +352,10 @@ bool TestAgentBridgeAliases()
     ok = Expect(verbOk, "agent.list succeeds") && ok;
     ok = Expect(out == "id=1 scope=ZONE provider=null wakes=0 state=ready", "agent.list reports null zone agent") && ok;
 
+    out = xrSim::HandleBridgeVerb("agent.provider", "", verbOk);
+    ok = Expect(verbOk, "agent.provider succeeds") && ok;
+    ok = Expect(out == "id=1 provider=null model=deterministic-null", "agent.provider reports provider contract") && ok;
+
     out = xrSim::HandleBridgeVerb("agent.wake", "1", verbOk);
     ok = Expect(verbOk, "agent.wake succeeds") && ok;
     ok = Expect(out == "xrsim wake applied_delta=5 wakes=1", "agent.wake maps to deterministic null wake") && ok;
@@ -299,6 +377,9 @@ int main()
     ok = TestSnapshotLoadRejectsBadVersionAsValue() && ok;
     ok = TestReplayToolLogReproducesRecordedDigest() && ok;
     ok = TestReplayDetectsDivergentBaseline() && ok;
+    ok = TestNullProviderReturnsDeterministicIntent() && ok;
+    ok = TestRuntimeUsesRecordedProviderIntent() && ok;
+    ok = TestRecordedProviderExhaustionFailsAsValue() && ok;
     ok = TestNullAgentWakeAppliesDeterministicIntent() && ok;
     ok = TestBridgeDebugVerbs() && ok;
     ok = TestBridgeSnapshotVerbs() && ok;

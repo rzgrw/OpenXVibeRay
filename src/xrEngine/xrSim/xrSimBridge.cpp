@@ -187,6 +187,13 @@ std::string HandleBridgeVerb(const std::string& verb, const std::string& payload
         return "id=1 scope=ZONE provider=null wakes=" + std::to_string(g_nullAgent.WakeCount()) + " state=ready";
     }
 
+    if (verb == "agent.provider")
+    {
+        EnsureDebugWorld();
+        ok = true;
+        return "id=1 provider=null model=deterministic-null";
+    }
+
     if (verb == "agent.wake")
     {
         if (!payload.empty() && payload != "1")
