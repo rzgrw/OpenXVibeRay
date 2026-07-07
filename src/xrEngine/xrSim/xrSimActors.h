@@ -25,6 +25,8 @@ struct ActorAgentRecord
 };
 
 const char* ActorScopeName(ActorAgentScope scope);
+const char* ActorLegalTools(ActorAgentScope scope);
+bool IsActorActionLegal(ActorAgentScope scope, const std::string& verb);
 ActorAgentRecord MakeDebugSquadAgent();
 ActorAgentRecord MakeDebugMutantPackAgent();
 std::string BuildActorObservation(

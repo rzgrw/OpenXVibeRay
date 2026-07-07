@@ -348,6 +348,10 @@ bool TestActuatorConvertsSquadIntentToCommands()
         ok = Expect(result.commands[0].verb == "set_stance", "actuator emits stance command") && ok;
         ok = Expect(result.commands[1].verb == "move_to", "actuator emits move command") && ok;
         ok = Expect(result.commands[2].arg0 == "burst_short", "actuator keeps fire pattern argument") && ok;
+        ok = Expect(
+            xrSim::FormatActuatorCommands(result.commands) ==
+                "set_stance cautious | move_to cover_node_12 | fire_pattern target_player burst_short",
+            "actuator formats commands in stable order") && ok;
     }
     return ok;
 }
@@ -383,6 +387,30 @@ bool TestActuatorAppliesPopulationToolThroughWorldState()
     ok = Expect(result.ok, "actuator accepts population tool") && ok;
     ok = Expect(result.appliedDelta == 10, "actuator applies clamped population delta") && ok;
     ok = Expect(state.Population(region, species) == 60, "actuator mutates world state through validator") && ok;
+    return ok;
+}
+
+bool TestActuatorRejectsMixedPlanAtomically()
+{
+    xrSim::WorldState state;
+    const xrSim::Handle region = state.CreateRegion("debug_region", 100);
+    const xrSim::Handle species = state.CreateSpecies("blind_dog");
+    xrSim::Result setup = state.SetPopulation(region, species, 50);
+    bool ok = Expect(setup.ok, "mixed actuator setup accepts population");
+
+    xrSim::ActorIntentPlan plan;
+    plan.actions.push_back(xrSim::ActorAction{ "adjust_population", "debug_region", "blind_dog", "", 500 });
+    plan.actions.push_back(xrSim::ActorAction{ "fire_pattern", "target_player", "burst_short", "", 0 });
+
+    const xrSim::ActuatorResult result =
+        xrSim::ExecuteActorIntent(state, xrSim::MakeDebugMutantPackAgent(), plan, 4);
+
+    ok = Expect(!result.ok, "actuator rejects mixed plan with illegal tail action") && ok;
+    ok = Expect(result.reason.find("illegal action") != std::string::npos,
+        "actuator mixed-plan failure explains illegal action") && ok;
+    ok = Expect(state.Population(region, species) == 50, "actuator mixed-plan failure leaves population unchanged") && ok;
+    ok = Expect(state.ToolLog().empty(), "actuator mixed-plan failure leaves tool log unchanged") && ok;
+    ok = Expect(result.commands.empty(), "actuator mixed-plan failure returns no partial command stream") && ok;
     return ok;
 }
 
@@ -819,7 +847,8 @@ bool TestDebugSquadObservationIsExperiential()
     ok = Expect(observation.find("memory_summary") != std::string::npos, "squad observation records memory") && ok;
     ok = Expect(observation.find("situation player_visible medium_range") != std::string::npos,
         "squad observation records situation") && ok;
-    ok = Expect(observation.find("legal_tools move_to fire_pattern vocalize retreat author_memory") != std::string::npos,
+    ok = Expect(observation.find("legal_tools move_to fire_pattern vocalize retreat author_memory adjust_population") !=
+            std::string::npos,
         "squad observation records legal tools") && ok;
     ok = Expect(observation.find(state.Digest()) != std::string::npos, "squad observation includes world digest") && ok;
     return ok;
@@ -836,7 +865,7 @@ bool TestDebugMutantPackObservationUsesPackTools()
 
     bool ok = Expect(prompt.find("xrsim_actor_wake_v1") == 0, "actor wake prompt has version");
     ok = Expect(prompt.find("scope MUTANT_PACK") != std::string::npos, "mutant prompt records scope") && ok;
-    ok = Expect(prompt.find("legal_tools stalk ambush retreat author_memory") != std::string::npos,
+    ok = Expect(prompt.find("legal_tools stalk ambush retreat author_memory adjust_population") != std::string::npos,
         "mutant prompt records pack legal tools") && ok;
     ok = Expect(prompt.find("return xrsim_actor_intent_v1") != std::string::npos,
         "mutant prompt requests actor intent response") && ok;
@@ -1057,6 +1086,7 @@ int main()
     ok = TestActuatorConvertsSquadIntentToCommands() && ok;
     ok = TestActuatorRejectsIllegalPackVerbAsValue() && ok;
     ok = TestActuatorAppliesPopulationToolThroughWorldState() && ok;
+    ok = TestActuatorRejectsMixedPlanAtomically() && ok;
     ok = TestRecordedTextProviderParsesScriptedWake() && ok;
     ok = TestRuntimeCoastsOnProviderCoastResult() && ok;
     ok = TestAgentProviderConfigDefaultsToSonnetTier() && ok;

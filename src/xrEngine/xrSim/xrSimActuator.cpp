@@ -6,17 +6,6 @@ namespace xrSim
 {
 namespace
 {
-bool IsLegalAction(ActorAgentScope scope, const std::string& verb)
-{
-    if (verb == "author_memory" || verb == "adjust_population")
-        return true;
-    if (scope == ActorAgentScope::Squad)
-        return verb == "move_to" || verb == "fire_pattern" || verb == "vocalize" || verb == "retreat";
-    if (scope == ActorAgentScope::MutantPack)
-        return verb == "stalk" || verb == "ambush" || verb == "retreat";
-    return false;
-}
-
 ActuatorResult FailActuator(const std::string& reason)
 {
     ActuatorResult result;
@@ -28,43 +17,52 @@ ActuatorResult FailActuator(const std::string& reason)
 ActuatorResult ExecuteActorIntent(
     WorldState& world, const ActorAgentRecord& actor, const ActorIntentPlan& plan, uint32_t gameDay)
 {
-    ActuatorResult result;
     if (plan.coast)
     {
+        ActuatorResult result;
         result.ok = true;
         result.coast = true;
         result.reason = "coast";
         return result;
     }
 
+    WorldState stagedWorld = world;
+    std::vector<ActuatorCommand> stagedCommands;
+    int32_t stagedAppliedDelta = 0;
+
     if (!plan.stance.empty())
-        result.commands.push_back(ActuatorCommand{ "set_stance", plan.stance, "", "" });
+        stagedCommands.push_back(ActuatorCommand{ "set_stance", plan.stance, "", "" });
 
     for (const ActorAction& action : plan.actions)
     {
-        if (!IsLegalAction(actor.scope, action.verb))
+        if (!IsActorActionLegal(actor.scope, action.verb))
             return FailActuator("illegal action for scope: " + action.verb);
 
         if (action.verb == "adjust_population")
         {
-            const Handle region = world.FindRegionByName(action.target);
+            const Handle region = stagedWorld.FindRegionByName(action.target);
             if (!region.IsValid())
                 return FailActuator("unknown region: " + action.target);
-            const Handle species = world.FindSpeciesByName(action.arg0);
+            const Handle species = stagedWorld.FindSpeciesByName(action.arg0);
             if (!species.IsValid())
                 return FailActuator("unknown species: " + action.arg0);
-            const uint32_t seq = uint32_t(world.ToolLog().size() + 1);
-            const Result applied = world.ApplyAdjustPopulation(seq, region, species, action.amount, gameDay);
+            const uint32_t seq = uint32_t(stagedWorld.ToolLog().size() + 1);
+            const Result applied = stagedWorld.ApplyAdjustPopulation(seq, region, species, action.amount, gameDay);
             if (!applied.ok)
                 return FailActuator(applied.reason);
-            result.appliedDelta += applied.appliedDelta;
+            stagedAppliedDelta += applied.appliedDelta;
             continue;
         }
 
-        result.commands.push_back(ActuatorCommand{ action.verb, action.target, action.arg0, action.arg1 });
+        stagedCommands.push_back(ActuatorCommand{ action.verb, action.target, action.arg0, action.arg1 });
     }
 
+    world = stagedWorld;
+
+    ActuatorResult result;
     result.ok = true;
+    result.appliedDelta = stagedAppliedDelta;
+    result.commands = stagedCommands;
     return result;
 }
 

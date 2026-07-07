@@ -29,16 +29,6 @@ std::string EscapeLineValue(const std::string& text)
     return out;
 }
 
-const char* LegalToolsForScope(ActorAgentScope scope)
-{
-    switch (scope)
-    {
-    case ActorAgentScope::Squad: return "move_to fire_pattern vocalize retreat author_memory";
-    case ActorAgentScope::MutantPack: return "stalk ambush retreat author_memory";
-    case ActorAgentScope::Zone: return "author_memory";
-    }
-    return "author_memory";
-}
 } // namespace
 
 const char* ActorScopeName(ActorAgentScope scope)
@@ -50,6 +40,28 @@ const char* ActorScopeName(ActorAgentScope scope)
     case ActorAgentScope::MutantPack: return "MUTANT_PACK";
     }
     return "UNKNOWN";
+}
+
+const char* ActorLegalTools(ActorAgentScope scope)
+{
+    switch (scope)
+    {
+    case ActorAgentScope::Squad: return "move_to fire_pattern vocalize retreat author_memory adjust_population";
+    case ActorAgentScope::MutantPack: return "stalk ambush retreat author_memory adjust_population";
+    case ActorAgentScope::Zone: return "author_memory adjust_population";
+    }
+    return "author_memory adjust_population";
+}
+
+bool IsActorActionLegal(ActorAgentScope scope, const std::string& verb)
+{
+    if (verb == "author_memory" || verb == "adjust_population")
+        return true;
+    if (scope == ActorAgentScope::Squad)
+        return verb == "move_to" || verb == "fire_pattern" || verb == "vocalize" || verb == "retreat";
+    if (scope == ActorAgentScope::MutantPack)
+        return verb == "stalk" || verb == "ambush" || verb == "retreat";
+    return false;
 }
 
 ActorAgentRecord MakeDebugSquadAgent()
@@ -82,7 +94,7 @@ std::string BuildActorObservation(
     out << "memory_summary " << EscapeLineValue(actor.memorySummary) << "\n";
     out << "situation " << EscapeLineValue(situation) << "\n";
     out << "world_digest " << EscapeLineValue(world.Digest()) << "\n";
-    out << "legal_tools " << LegalToolsForScope(actor.scope) << "\n";
+    out << "legal_tools " << ActorLegalTools(actor.scope) << "\n";
     return out.str();
 }
 
