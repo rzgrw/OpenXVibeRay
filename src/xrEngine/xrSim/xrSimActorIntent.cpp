@@ -54,6 +54,81 @@ bool ReadSingleToken(std::istringstream& record, std::string& value)
         return false;
     return HasNoTrailingTokens(record);
 }
+
+bool IsAmountBearingActorVerb(const std::string& verb)
+{
+    return verb == "adjust_population";
+}
+
+bool ParseActorActionRecord(std::istringstream& record, ActorAction& action, std::string& reason)
+{
+    if (!(record >> action.verb))
+    {
+        reason = "invalid action record";
+        return false;
+    }
+
+    if (IsAmountBearingActorVerb(action.verb))
+    {
+        std::string amountText;
+        std::string extra;
+        if (!(record >> action.target >> action.arg0 >> amountText) || (record >> extra))
+        {
+            reason = "invalid action record";
+            return false;
+        }
+        if (!ParseInt32Token(amountText, action.amount))
+        {
+            reason = "invalid action amount";
+            return false;
+        }
+        action.arg1.clear();
+        return true;
+    }
+
+    if (!(record >> action.target))
+    {
+        action.target.clear();
+        action.arg0.clear();
+        action.arg1.clear();
+        if (!HasNoTrailingTokens(record))
+        {
+            reason = "invalid action record";
+            return false;
+        }
+        return true;
+    }
+
+    if (!(record >> action.arg0))
+    {
+        action.arg0.clear();
+        action.arg1.clear();
+        if (!HasNoTrailingTokens(record))
+        {
+            reason = "invalid action record";
+            return false;
+        }
+        return true;
+    }
+
+    if (!(record >> action.arg1))
+    {
+        action.arg1.clear();
+        if (!HasNoTrailingTokens(record))
+        {
+            reason = "invalid action record";
+            return false;
+        }
+        return true;
+    }
+
+    if (!HasNoTrailingTokens(record))
+    {
+        reason = "invalid action record";
+        return false;
+    }
+    return true;
+}
 } // namespace
 
 ActorIntentParseResult ParseActorIntentPlan(const std::string& text)
@@ -120,40 +195,9 @@ ActorIntentParseResult ParseActorIntentPlan(const std::string& text)
         else if (key == "action")
         {
             ActorAction action;
-            std::string amountText;
-            if (!(record >> action.verb))
-                return FailActorIntent("invalid action record");
-
-            if (record >> action.target)
-            {
-                if (record >> action.arg0)
-                {
-                    if (record >> action.arg1)
-                    {
-                        if (record >> amountText)
-                        {
-                            if (!ParseInt32Token(amountText, action.amount) || !HasNoTrailingTokens(record))
-                                return FailActorIntent("invalid action amount");
-                        }
-                        else if (!HasNoTrailingTokens(record))
-                        {
-                            return FailActorIntent("invalid action amount");
-                        }
-                    }
-                    else if (!HasNoTrailingTokens(record))
-                    {
-                        return FailActorIntent("invalid action amount");
-                    }
-                }
-            }
-            else
-            {
-                action.target.clear();
-                action.arg0.clear();
-                action.arg1.clear();
-                if (!HasNoTrailingTokens(record))
-                    return FailActorIntent("invalid action amount");
-            }
+            std::string reason;
+            if (!ParseActorActionRecord(record, action, reason))
+                return FailActorIntent(reason);
 
             result.plan.actions.push_back(action);
             seenAction = true;
@@ -198,14 +242,21 @@ std::string FormatActorIntentPlan(const ActorIntentPlan& plan)
         for (const ActorAction& action : plan.actions)
         {
             out << "action " << action.verb;
-            if (!action.target.empty())
+            if (IsAmountBearingActorVerb(action.verb))
+            {
                 out << " " << action.target;
-            if (!action.arg0.empty())
                 out << " " << action.arg0;
-            if (!action.arg1.empty())
-                out << " " << action.arg1;
-            if (action.amount != 0)
                 out << " " << action.amount;
+            }
+            else
+            {
+                if (!action.target.empty())
+                    out << " " << action.target;
+                if (!action.arg0.empty())
+                    out << " " << action.arg0;
+                if (!action.arg1.empty())
+                    out << " " << action.arg1;
+            }
             out << "\n";
         }
         for (const std::string& memory : plan.memories)

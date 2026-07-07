@@ -83,11 +83,15 @@ ActuatorResult ActorRuntime::Wake(
     }
 
     ActuatorResult executed = ExecuteActorIntent(world, actor, m_lastProviderResult.plan, gameDay);
-    if (executed.ok)
+    if (executed.ok && !executed.coast)
     {
         actor.lastIntent = m_lastProviderResult.plan;
         m_lastCommands = executed.commands;
         ++m_wakeCount;
+    }
+    else if (executed.ok)
+    {
+        m_lastCommands = executed.commands;
     }
     return executed;
 }

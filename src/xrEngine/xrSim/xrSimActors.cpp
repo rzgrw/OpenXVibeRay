@@ -29,6 +29,48 @@ std::string EscapeLineValue(const std::string& text)
     return out;
 }
 
+std::string SummarizeIntent(const ActorIntentPlan& intent)
+{
+    if (intent.coast)
+        return "coast";
+
+    std::ostringstream out;
+    bool first = true;
+    const auto appendField = [&out, &first](const std::string& key, const std::string& value)
+    {
+        if (value.empty())
+            return;
+        if (!first)
+            out << " ";
+        out << key << "=" << value;
+        first = false;
+    };
+
+    appendField("goal", intent.goal);
+    appendField("stance", intent.stance);
+    if (intent.durationMs != 0)
+    {
+        if (!first)
+            out << " ";
+        out << "duration_ms=" << intent.durationMs;
+        first = false;
+    }
+    if (!intent.actions.empty())
+    {
+        if (!first)
+            out << " ";
+        out << "actions=" << intent.actions.size();
+        first = false;
+    }
+    if (!intent.memories.empty())
+    {
+        if (!first)
+            out << " ";
+        out << "memories=" << intent.memories.size();
+    }
+    return out.str();
+}
+
 } // namespace
 
 const char* ActorScopeName(ActorAgentScope scope)
@@ -92,6 +134,11 @@ std::string BuildActorObservation(
     out << "scope " << ActorScopeName(actor.scope) << "\n";
     out << "name " << EscapeLineValue(actor.name) << "\n";
     out << "memory_summary " << EscapeLineValue(actor.memorySummary) << "\n";
+    if (!actor.lastIntent.goal.empty())
+        out << "current_goal " << EscapeLineValue(actor.lastIntent.goal) << "\n";
+    const std::string lastIntentSummary = SummarizeIntent(actor.lastIntent);
+    if (!lastIntentSummary.empty())
+        out << "last_intent " << EscapeLineValue(lastIntentSummary) << "\n";
     out << "situation " << EscapeLineValue(situation) << "\n";
     out << "world_digest " << EscapeLineValue(world.Digest()) << "\n";
     out << "legal_tools " << ActorLegalTools(actor.scope) << "\n";

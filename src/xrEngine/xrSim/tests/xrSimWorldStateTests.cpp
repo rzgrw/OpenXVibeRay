@@ -746,6 +746,58 @@ bool TestActorIntentParserSupportsVerbOnlyActionFormatRoundTrip()
     return ok;
 }
 
+bool TestActorIntentParserRoutesAdjustPopulationAmountIntoActuator()
+{
+    xrSim::WorldState state;
+    const xrSim::Handle region = state.CreateRegion("debug_region", 100);
+    const xrSim::Handle species = state.CreateSpecies("blind_dog");
+    xrSim::Result setup = state.SetPopulation(region, species, 50);
+    bool ok = Expect(setup.ok, "actor intent adjust_population setup accepts population");
+
+    const xrSim::ActorIntentParseResult parsed = xrSim::ParseActorIntentPlan(
+        "xrsim_actor_intent_v1\n"
+        "goal tune_spawn_budget\n"
+        "action adjust_population debug_region blind_dog 500\n"
+        "end\n");
+    ok = Expect(parsed.ok, "actor intent parser accepts adjust_population amount form") && ok;
+    ok = Expect(parsed.plan.actions.size() == 1, "actor intent adjust_population keeps single action") && ok;
+    if (parsed.plan.actions.size() == 1)
+    {
+        ok = Expect(parsed.plan.actions[0].target == "debug_region",
+            "actor intent adjust_population keeps region target") && ok;
+        ok = Expect(parsed.plan.actions[0].arg0 == "blind_dog",
+            "actor intent adjust_population keeps species in arg0") && ok;
+        ok = Expect(parsed.plan.actions[0].arg1.empty(),
+            "actor intent adjust_population does not treat amount as arg1") && ok;
+        ok = Expect(parsed.plan.actions[0].amount == 500,
+            "actor intent adjust_population routes parsed amount into amount field") && ok;
+    }
+
+    xrSim::ActorAgentRecord actor = xrSim::MakeDebugSquadAgent();
+    const xrSim::ActuatorResult executed = xrSim::ExecuteActorIntent(state, actor, parsed.plan, 9);
+    ok = Expect(executed.ok, "actor intent adjust_population executes parsed plan") && ok;
+    ok = Expect(executed.appliedDelta == 10, "actor intent adjust_population applies parsed amount through clamp") && ok;
+    ok = Expect(state.Population(region, species) == 60,
+        "actor intent adjust_population changes world population by parsed amount") && ok;
+    return ok;
+}
+
+bool TestActorIntentParserRejectsMalformedAdjustPopulationAction()
+{
+    const xrSim::ActorIntentParseResult missingAmount = xrSim::ParseActorIntentPlan(
+        "xrsim_actor_intent_v1\n"
+        "action adjust_population debug_region blind_dog\n"
+        "end\n");
+    bool ok = Expect(!missingAmount.ok, "actor intent parser rejects adjust_population without amount");
+
+    const xrSim::ActorIntentParseResult extraToken = xrSim::ParseActorIntentPlan(
+        "xrsim_actor_intent_v1\n"
+        "action adjust_population debug_region blind_dog 5 extra\n"
+        "end\n");
+    ok = Expect(!extraToken.ok, "actor intent parser rejects adjust_population extra token") && ok;
+    return ok;
+}
+
 bool TestActorIntentParserRejectsTrailingTokens()
 {
     struct Case
@@ -1042,6 +1094,42 @@ bool TestActorRuntimePreservesLastIntentWhenExecutionFails()
     return ok;
 }
 
+bool TestActorRuntimeCoastPreservesPriorEmbodiedIntent()
+{
+    xrSim::WorldState state;
+    state.CreateRegion("debug_region", 100);
+    state.CreateSpecies("blind_dog");
+
+    xrSim::ActorAgentRecord squad = xrSim::MakeDebugSquadAgent();
+    xrSim::ActorRuntime runtime;
+    xrSim::DeterministicActorIntentProvider deterministicProvider;
+    runtime.SetProvider(&deterministicProvider);
+
+    xrSim::ActuatorResult result = runtime.Wake(state, squad, "player_visible medium_range", 1);
+    bool ok = Expect(result.ok, "actor coast regression setup wake succeeds");
+    const xrSim::ActorIntentPlan previousIntent = squad.lastIntent;
+    ok = Expect(runtime.LastCommands().size() >= 2, "actor coast regression setup stores commands") && ok;
+    ok = Expect(runtime.WakeCount() == 1, "actor coast regression setup records initial wake count") && ok;
+
+    std::vector<std::string> script;
+    script.push_back(
+        "xrsim_actor_intent_v1\n"
+        "coast\n"
+        "end\n");
+    xrSim::RecordedActorIntentProvider coastProvider(script);
+    runtime.SetProvider(&coastProvider);
+
+    result = runtime.Wake(state, squad, "player_visible medium_range", 2);
+
+    ok = Expect(result.ok, "actor runtime accepts provider coast") && ok;
+    ok = Expect(result.coast, "actor runtime reports coast result") && ok;
+    ok = Expect(runtime.LastCommands().empty(), "actor runtime clears commands for coast wake") && ok;
+    ok = Expect(runtime.WakeCount() == 1, "actor runtime does not count coast as new embodied wake") && ok;
+    ok = Expect(squad.lastIntent.goal == previousIntent.goal, "actor runtime keeps previous goal on coast") && ok;
+    ok = Expect(squad.lastIntent.stance == previousIntent.stance, "actor runtime keeps previous stance on coast") && ok;
+    return ok;
+}
+
 bool TestNullAgentWakeAppliesDeterministicIntent()
 {
     xrSim::WorldState state;
@@ -1218,6 +1306,56 @@ bool TestActorBridgeVerbs()
     ok = Expect(out != "empty", "agent.actor.commands reports actuator stream") && ok;
     return ok;
 }
+
+bool TestAnthropicTextResponseParsesPrettyPrintedUnicodeTextBlock()
+{
+    const char* response =
+        "{\n"
+        "  \"id\" : \"msg_test\",\n"
+        "  \"type\" : \"message\",\n"
+        "  \"content\" : [\n"
+        "    {\n"
+        "      \"type\" : \"tool_use\",\n"
+        "      \"name\" : \"ignore_me\"\n"
+        "    },\n"
+        "    {\n"
+        "      \"type\" : \"text\",\n"
+        "      \"text\" : \"xrsim_agent_response_v1\\nintent adjust_population debug_region blind_dog \\u0033\\nend\\n\"\n"
+        "    }\n"
+        "  ]\n"
+        "}\n";
+
+    const xrSim::AgentProviderResult result =
+        xrSim::ParseAnthropicMessagesTextResponse(response, "anthropic", "claude-sonnet-5");
+    bool ok = Expect(result.ok, "anthropic text response parses pretty printed messages json");
+    ok = Expect(result.intents.size() == 1, "anthropic pretty printed response emits one intent") && ok;
+    if (result.intents.size() == 1)
+        ok = Expect(result.intents[0].delta == 3, "anthropic text response decodes unicode escapes in text") && ok;
+    return ok;
+}
+
+bool TestActorObservationIncludesLastIntentSummary()
+{
+    xrSim::WorldState state;
+    const xrSim::Handle region = state.CreateRegion("debug_region", 100);
+    const xrSim::Handle species = state.CreateSpecies("blind_dog");
+    xrSim::Result setup = state.SetPopulation(region, species, 50);
+    bool ok = Expect(setup.ok, "actor observation last intent setup accepts population");
+
+    xrSim::ActorAgentRecord squad = xrSim::MakeDebugSquadAgent();
+    squad.lastIntent.goal = "survive_and_delay_player";
+    squad.lastIntent.stance = "cautious";
+    squad.lastIntent.durationMs = 3500;
+    squad.lastIntent.actions.push_back(xrSim::ActorAction{ "move_to", "cover_node_12", "", "", 0 });
+    squad.lastIntent.actions.push_back(xrSim::ActorAction{ "fire_pattern", "target_player", "burst_short", "", 0 });
+
+    const std::string observation = xrSim::BuildActorObservation(squad, state, "player_visible medium_range");
+    ok = Expect(observation.find("current_goal survive_and_delay_player") != std::string::npos,
+        "actor observation includes current goal derived from last intent") && ok;
+    ok = Expect(observation.find("last_intent goal=survive_and_delay_player stance=cautious") != std::string::npos,
+        "actor observation includes one-line last intent summary") && ok;
+    return ok;
+}
 } // namespace
 
 int main()
@@ -1255,18 +1393,22 @@ int main()
     ok = TestActorIntentParserAcceptsSquadPlan() && ok;
     ok = TestActorIntentParserAcceptsCoast() && ok;
     ok = TestActorIntentParserSupportsVerbOnlyActionFormatRoundTrip() && ok;
+    ok = TestActorIntentParserRoutesAdjustPopulationAmountIntoActuator() && ok;
+    ok = TestActorIntentParserRejectsMalformedAdjustPopulationAction() && ok;
     ok = TestActorIntentParserRejectsTrailingTokens() && ok;
     ok = TestActorIntentParserRejectsMixedCoastAndMetadataOrActions() && ok;
     ok = TestActorIntentParserRoundTripsFormat() && ok;
     ok = TestActorIntentParserRejectsBadVersionAsValue() && ok;
     ok = TestDebugSquadObservationIsExperiential() && ok;
     ok = TestDebugMutantPackObservationUsesPackTools() && ok;
+    ok = TestActorObservationIncludesLastIntentSummary() && ok;
     ok = TestActorObservationSanitizesInjectedControlLines() && ok;
     ok = TestActorRuntimeWakesDebugSquad() && ok;
     ok = TestActorRuntimeWakesDebugMutantPack() && ok;
     ok = TestRecordedActorProviderExhaustionFailsAsValue() && ok;
     ok = TestActorRuntimeClearsLastCommandsWhenProviderFails() && ok;
     ok = TestActorRuntimePreservesLastIntentWhenExecutionFails() && ok;
+    ok = TestActorRuntimeCoastPreservesPriorEmbodiedIntent() && ok;
     ok = TestNullAgentWakeAppliesDeterministicIntent() && ok;
     ok = TestBridgeDebugVerbs() && ok;
     ok = TestBridgeSnapshotVerbs() && ok;
@@ -1274,5 +1416,6 @@ int main()
     ok = TestBridgeNullAgentWakeVerb() && ok;
     ok = TestAgentBridgeAliases() && ok;
     ok = TestActorBridgeVerbs() && ok;
+    ok = TestAnthropicTextResponseParsesPrettyPrintedUnicodeTextBlock() && ok;
     return ok ? 0 : 1;
 }

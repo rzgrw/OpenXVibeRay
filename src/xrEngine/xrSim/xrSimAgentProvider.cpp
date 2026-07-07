@@ -1,5 +1,6 @@
 #include "xrSim/xrSimAgentProvider.h"
 
+#include <cctype>
 #include <cerrno>
 #include <cstdlib>
 #include <limits>
@@ -94,17 +95,84 @@ std::string EscapeJsonString(const std::string& text)
     return out;
 }
 
-bool DecodeJsonStringAt(const std::string& text, size_t valueStart, std::string& decoded)
+bool ReadJsonStringAt(const std::string& text, size_t& pos, std::string& decoded)
 {
     decoded.clear();
-    if (valueStart >= text.size() || text[valueStart] != '"')
+    if (pos >= text.size() || text[pos] != '"')
         return false;
 
-    for (size_t i = valueStart + 1; i < text.size(); ++i)
+    auto appendUtf8 = [&decoded](uint32_t codePoint)
+    {
+        if (codePoint > 0x10FFFF || (codePoint >= 0xD800 && codePoint <= 0xDFFF))
+            return false;
+        if (codePoint <= 0x7F)
+        {
+            decoded += char(codePoint);
+        }
+        else if (codePoint <= 0x7FF)
+        {
+            decoded += char(0xC0 | ((codePoint >> 6) & 0x1F));
+            decoded += char(0x80 | (codePoint & 0x3F));
+        }
+        else if (codePoint <= 0xFFFF)
+        {
+            decoded += char(0xE0 | ((codePoint >> 12) & 0x0F));
+            decoded += char(0x80 | ((codePoint >> 6) & 0x3F));
+            decoded += char(0x80 | (codePoint & 0x3F));
+        }
+        else
+        {
+            decoded += char(0xF0 | ((codePoint >> 18) & 0x07));
+            decoded += char(0x80 | ((codePoint >> 12) & 0x3F));
+            decoded += char(0x80 | ((codePoint >> 6) & 0x3F));
+            decoded += char(0x80 | (codePoint & 0x3F));
+        }
+        return true;
+    };
+
+    auto parseHexDigit = [](char ch, uint32_t& value)
+    {
+        if (ch >= '0' && ch <= '9')
+        {
+            value = uint32_t(ch - '0');
+            return true;
+        }
+        if (ch >= 'a' && ch <= 'f')
+        {
+            value = 10u + uint32_t(ch - 'a');
+            return true;
+        }
+        if (ch >= 'A' && ch <= 'F')
+        {
+            value = 10u + uint32_t(ch - 'A');
+            return true;
+        }
+        return false;
+    };
+
+    auto parseHex4 = [&text, &parseHexDigit](size_t pos, uint32_t& value)
+    {
+        if (pos + 4 > text.size())
+            return false;
+        value = 0;
+        for (size_t i = pos; i < pos + 4; ++i)
+        {
+            uint32_t digit = 0;
+            if (!parseHexDigit(text[i], digit))
+                return false;
+            value = (value << 4u) | digit;
+        }
+        return true;
+    };
+
+    for (size_t i = pos + 1; i < text.size(); ++i)
     {
         const char ch = text[i];
         if (ch == '"')
+        {
+            pos = i + 1;
             return true;
+        }
         if (ch != '\\')
         {
             decoded += ch;
@@ -123,8 +191,304 @@ bool DecodeJsonStringAt(const std::string& text, size_t valueStart, std::string&
         case 't': decoded += '\t'; break;
         case 'b': decoded += '\b'; break;
         case 'f': decoded += '\f'; break;
+        case 'u':
+        {
+            uint32_t codePoint = 0;
+            if (!parseHex4(i + 1, codePoint))
+                return false;
+            i += 4;
+
+            if (codePoint >= 0xD800 && codePoint <= 0xDBFF)
+            {
+                if (i + 2 >= text.size() || text[i + 1] != '\\' || text[i + 2] != 'u')
+                    return false;
+                uint32_t lowSurrogate = 0;
+                if (!parseHex4(i + 3, lowSurrogate))
+                    return false;
+                if (lowSurrogate < 0xDC00 || lowSurrogate > 0xDFFF)
+                    return false;
+                codePoint = 0x10000 + (((codePoint - 0xD800) << 10u) | (lowSurrogate - 0xDC00));
+                i += 6;
+            }
+            else if (codePoint >= 0xDC00 && codePoint <= 0xDFFF)
+            {
+                return false;
+            }
+
+            if (!appendUtf8(codePoint))
+                return false;
+            break;
+        }
         default: return false;
         }
+    }
+    return false;
+}
+
+void SkipJsonWhitespace(const std::string& text, size_t& pos)
+{
+    while (pos < text.size() && std::isspace(static_cast<unsigned char>(text[pos])) != 0)
+        ++pos;
+}
+
+bool SkipJsonValue(const std::string& text, size_t& pos);
+
+bool SkipJsonObject(const std::string& text, size_t& pos)
+{
+    if (pos >= text.size() || text[pos] != '{')
+        return false;
+    ++pos;
+    SkipJsonWhitespace(text, pos);
+    if (pos < text.size() && text[pos] == '}')
+    {
+        ++pos;
+        return true;
+    }
+
+    while (pos < text.size())
+    {
+        std::string ignoredKey;
+        if (!ReadJsonStringAt(text, pos, ignoredKey))
+            return false;
+
+        SkipJsonWhitespace(text, pos);
+        if (pos >= text.size() || text[pos] != ':')
+            return false;
+        ++pos;
+        if (!SkipJsonValue(text, pos))
+            return false;
+        SkipJsonWhitespace(text, pos);
+        if (pos >= text.size())
+            return false;
+        if (text[pos] == '}')
+        {
+            ++pos;
+            return true;
+        }
+        if (text[pos] != ',')
+            return false;
+        ++pos;
+        SkipJsonWhitespace(text, pos);
+    }
+    return false;
+}
+
+bool SkipJsonArray(const std::string& text, size_t& pos)
+{
+    if (pos >= text.size() || text[pos] != '[')
+        return false;
+    ++pos;
+    SkipJsonWhitespace(text, pos);
+    if (pos < text.size() && text[pos] == ']')
+    {
+        ++pos;
+        return true;
+    }
+
+    while (pos < text.size())
+    {
+        if (!SkipJsonValue(text, pos))
+            return false;
+        SkipJsonWhitespace(text, pos);
+        if (pos >= text.size())
+            return false;
+        if (text[pos] == ']')
+        {
+            ++pos;
+            return true;
+        }
+        if (text[pos] != ',')
+            return false;
+        ++pos;
+        SkipJsonWhitespace(text, pos);
+    }
+    return false;
+}
+
+bool SkipJsonPrimitive(const std::string& text, size_t& pos)
+{
+    const size_t start = pos;
+    while (pos < text.size())
+    {
+        const char ch = text[pos];
+        if (ch == ',' || ch == ']' || ch == '}' || std::isspace(static_cast<unsigned char>(ch)) != 0)
+            break;
+        ++pos;
+    }
+    return pos > start;
+}
+
+bool SkipJsonValue(const std::string& text, size_t& pos)
+{
+    SkipJsonWhitespace(text, pos);
+    if (pos >= text.size())
+        return false;
+    if (text[pos] == '"')
+    {
+        std::string ignored;
+        return ReadJsonStringAt(text, pos, ignored);
+    }
+    if (text[pos] == '{')
+        return SkipJsonObject(text, pos);
+    if (text[pos] == '[')
+        return SkipJsonArray(text, pos);
+    return SkipJsonPrimitive(text, pos);
+}
+
+bool ReadJsonString(const std::string& text, size_t& pos, std::string& decoded)
+{
+    return ReadJsonStringAt(text, pos, decoded);
+}
+
+bool ExtractAnthropicTextContentItem(
+    const std::string& text, size_t& pos, std::string& responseText, bool& foundTextBlock)
+{
+    if (pos >= text.size() || text[pos] != '{')
+        return false;
+    ++pos;
+    SkipJsonWhitespace(text, pos);
+
+    std::string typeValue;
+    std::string textValue;
+    bool hasTextValue = false;
+
+    if (pos < text.size() && text[pos] == '}')
+    {
+        ++pos;
+        return true;
+    }
+
+    while (pos < text.size())
+    {
+        std::string key;
+        if (!ReadJsonString(text, pos, key))
+            return false;
+        SkipJsonWhitespace(text, pos);
+        if (pos >= text.size() || text[pos] != ':')
+            return false;
+        ++pos;
+        SkipJsonWhitespace(text, pos);
+
+        if (key == "type")
+        {
+            if (!ReadJsonString(text, pos, typeValue))
+                return false;
+        }
+        else if (key == "text")
+        {
+            if (!ReadJsonString(text, pos, textValue))
+                return false;
+            hasTextValue = true;
+        }
+        else if (!SkipJsonValue(text, pos))
+        {
+            return false;
+        }
+
+        SkipJsonWhitespace(text, pos);
+        if (pos >= text.size())
+            return false;
+        if (text[pos] == '}')
+        {
+            ++pos;
+            if (typeValue == "text")
+            {
+                foundTextBlock = true;
+                if (!hasTextValue)
+                    return false;
+                responseText = textValue;
+            }
+            return true;
+        }
+        if (text[pos] != ',')
+            return false;
+        ++pos;
+        SkipJsonWhitespace(text, pos);
+    }
+    return false;
+}
+
+bool ExtractAnthropicTextContent(const std::string& text, std::string& responseText, bool& foundTextBlock)
+{
+    foundTextBlock = false;
+    responseText.clear();
+
+    size_t pos = 0;
+    SkipJsonWhitespace(text, pos);
+    if (pos >= text.size() || text[pos] != '{')
+        return false;
+    ++pos;
+    SkipJsonWhitespace(text, pos);
+
+    if (pos < text.size() && text[pos] == '}')
+        return false;
+
+    while (pos < text.size())
+    {
+        std::string key;
+        if (!ReadJsonString(text, pos, key))
+            return false;
+        SkipJsonWhitespace(text, pos);
+        if (pos >= text.size() || text[pos] != ':')
+            return false;
+        ++pos;
+        SkipJsonWhitespace(text, pos);
+
+        if (key == "content")
+        {
+            if (pos >= text.size() || text[pos] != '[')
+                return false;
+            ++pos;
+            SkipJsonWhitespace(text, pos);
+            if (pos < text.size() && text[pos] == ']')
+            {
+                ++pos;
+            }
+            else
+            {
+                while (pos < text.size())
+                {
+                    if (pos < text.size() && text[pos] == '{')
+                    {
+                        if (!ExtractAnthropicTextContentItem(text, pos, responseText, foundTextBlock))
+                            return false;
+                        if (foundTextBlock && !responseText.empty())
+                            return true;
+                    }
+                    else if (!SkipJsonValue(text, pos))
+                    {
+                        return false;
+                    }
+
+                    SkipJsonWhitespace(text, pos);
+                    if (pos >= text.size())
+                        return false;
+                    if (text[pos] == ']')
+                    {
+                        ++pos;
+                        break;
+                    }
+                    if (text[pos] != ',')
+                        return false;
+                    ++pos;
+                    SkipJsonWhitespace(text, pos);
+                }
+            }
+        }
+        else if (!SkipJsonValue(text, pos))
+        {
+            return false;
+        }
+
+        SkipJsonWhitespace(text, pos);
+        if (pos >= text.size())
+            return false;
+        if (text[pos] == '}')
+            return true;
+        if (text[pos] != ',')
+            return false;
+        ++pos;
+        SkipJsonWhitespace(text, pos);
     }
     return false;
 }
@@ -411,19 +775,15 @@ AnthropicMessagesRequest BuildAnthropicMessagesRequest(
 AgentProviderResult ParseAnthropicMessagesTextResponse(
     const std::string& text, const std::string& provider, const std::string& model)
 {
-    const std::string typeMarker = "\"type\":\"text\"";
-    const size_t typePos = text.find(typeMarker);
-    if (typePos == std::string::npos)
-        return FailResponse(provider, model, "anthropic response missing text block");
-
-    const std::string textMarker = "\"text\":\"";
-    const size_t textPos = text.find(textMarker, typePos);
-    if (textPos == std::string::npos)
-        return FailResponse(provider, model, "anthropic response missing text content");
-
     std::string responseText;
-    if (!DecodeJsonStringAt(text, textPos + textMarker.size() - 1, responseText))
-        return FailResponse(provider, model, "invalid anthropic text content");
+    bool foundTextBlock = false;
+    if (!ExtractAnthropicTextContent(text, responseText, foundTextBlock))
+    {
+        return FailResponse(provider, model, foundTextBlock ? "invalid anthropic text content"
+                                                            : "anthropic response missing text block");
+    }
+    if (!foundTextBlock)
+        return FailResponse(provider, model, "anthropic response missing text block");
 
     return ParseAgentProviderResponse(responseText, provider, model);
 }
