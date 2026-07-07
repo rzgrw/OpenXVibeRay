@@ -1,5 +1,6 @@
 #include "xrSim/xrSimWorldState.h"
 #include "xrSim/xrSimBridge.h"
+#include "xrSim/xrSimNullAgent.h"
 
 #include <cstdio>
 #include <string>
@@ -157,6 +158,26 @@ bool TestReplayDetectsDivergentBaseline()
     return ok;
 }
 
+bool TestNullAgentWakeAppliesDeterministicIntent()
+{
+    xrSim::WorldState state;
+    const xrSim::Handle region = state.CreateRegion("debug_region", 100);
+    const xrSim::Handle species = state.CreateSpecies("blind_dog");
+    xrSim::Result result = state.SetPopulation(region, species, 50);
+    bool ok = Expect(result.ok, "null agent setup accepts population");
+
+    xrSim::NullAgentRuntime runtime;
+    result = runtime.Wake(state, 3);
+    ok = Expect(result.ok, "null agent wake succeeds") && ok;
+    ok = Expect(result.appliedDelta == 5, "null agent wake applies deterministic delta") && ok;
+    ok = Expect(state.Population(region, species) == 55, "null agent wake mutates population") && ok;
+    ok = Expect(state.ToolLog().size() == 1, "null agent wake records tool log") && ok;
+    ok = Expect(state.ToolLog().back().seq == 1, "null agent wake starts sequence at one") && ok;
+    ok = Expect(state.ToolLog().back().gameDay == 3, "null agent wake records game day") && ok;
+    ok = Expect(runtime.WakeCount() == 1, "null agent wake count increments") && ok;
+    return ok;
+}
+
 bool TestBridgeDebugVerbs()
 {
     bool verbOk = false;
@@ -229,6 +250,23 @@ bool TestBridgeReplayVerb()
         "ai.replay reports reproduced digest") && ok;
     return ok;
 }
+
+bool TestBridgeNullAgentWakeVerb()
+{
+    bool verbOk = false;
+    std::string out = xrSim::HandleBridgeVerb("ai.reset", "", verbOk);
+    bool ok = Expect(verbOk, "bridge null-agent setup reset succeeds");
+
+    out = xrSim::HandleBridgeVerb("ai.wake", "", verbOk);
+    ok = Expect(verbOk, "ai.wake succeeds") && ok;
+    ok = Expect(out == "xrsim wake applied_delta=5 wakes=1", "ai.wake reports deterministic wake") && ok;
+
+    out = xrSim::HandleBridgeVerb("ai.observe", "", verbOk);
+    ok = Expect(verbOk, "ai.observe after wake succeeds") && ok;
+    ok = Expect(out == "regions=1 species=1 cohorts=1 log=1 pop{debug_region:blind_dog=55}",
+        "ai.wake updates observed digest") && ok;
+    return ok;
+}
 } // namespace
 
 int main()
@@ -241,8 +279,10 @@ int main()
     ok = TestSnapshotLoadRejectsBadVersionAsValue() && ok;
     ok = TestReplayToolLogReproducesRecordedDigest() && ok;
     ok = TestReplayDetectsDivergentBaseline() && ok;
+    ok = TestNullAgentWakeAppliesDeterministicIntent() && ok;
     ok = TestBridgeDebugVerbs() && ok;
     ok = TestBridgeSnapshotVerbs() && ok;
     ok = TestBridgeReplayVerb() && ok;
+    ok = TestBridgeNullAgentWakeVerb() && ok;
     return ok ? 0 : 1;
 }

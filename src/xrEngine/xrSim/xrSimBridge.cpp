@@ -1,4 +1,5 @@
 #include "xrSim/xrSimBridge.h"
+#include "xrSim/xrSimNullAgent.h"
 #include "xrSim/xrSimWorldState.h"
 
 #include <cstdio>
@@ -9,12 +10,14 @@ namespace xrSim
 namespace
 {
 WorldState g_debugWorld;
+NullAgentRuntime g_nullAgent;
 uint32_t g_nextSeq = 1;
 bool g_initialized = false;
 
 void ResetDebugWorld()
 {
     g_debugWorld = WorldState{};
+    g_nullAgent = NullAgentRuntime{};
     const Handle region = g_debugWorld.CreateRegion("debug_region", 100);
     const Handle species = g_debugWorld.CreateSpecies("blind_dog");
     g_debugWorld.SetPopulation(region, species, 50);
@@ -126,6 +129,18 @@ std::string HandleBridgeVerb(const std::string& verb, const std::string& payload
 
     if (verb == "ai.inject")
         return InjectIntent(payload, ok);
+
+    if (verb == "ai.wake")
+    {
+        EnsureDebugWorld();
+        const Result result = g_nullAgent.Wake(g_debugWorld, 0);
+        ok = result.ok;
+        if (!result.ok)
+            return result.reason;
+        g_nextSeq = uint32_t(g_debugWorld.ToolLog().size() + 1);
+        return "xrsim wake applied_delta=" + std::to_string(result.appliedDelta) +
+            " wakes=" + std::to_string(g_nullAgent.WakeCount());
+    }
 
     if (verb == "ai.snapshot")
     {

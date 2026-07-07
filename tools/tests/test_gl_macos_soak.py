@@ -86,6 +86,7 @@ class DryRunCliTests(unittest.TestCase):
         commands = [step.raw for step in steps if step.kind == "bridge"]
         self.assertIn("ai.reset", commands)
         self.assertIn("ai.observe", commands)
+        self.assertIn("ai.wake", commands)
         self.assertIn("ai.inject adjust_population debug_region blind_dog 500", commands)
         self.assertIn("ai.snapshot", commands)
         self.assertIn("ai.log", commands)
