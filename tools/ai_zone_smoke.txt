@@ -12,6 +12,7 @@ ai.snapshot
 ai.log
 ai.replay
 agent.list
+agent.provider
 agent.wake 1
 agent.tree
 cmd quit
