@@ -974,6 +974,74 @@ bool TestRecordedActorProviderExhaustionFailsAsValue()
     return ok;
 }
 
+bool TestActorRuntimeClearsLastCommandsWhenProviderFails()
+{
+    xrSim::WorldState state;
+    state.CreateRegion("debug_region", 100);
+    state.CreateSpecies("blind_dog");
+
+    xrSim::ActorAgentRecord squad = xrSim::MakeDebugSquadAgent();
+    xrSim::ActorRuntime runtime;
+    xrSim::DeterministicActorIntentProvider deterministicProvider;
+    runtime.SetProvider(&deterministicProvider);
+
+    xrSim::ActuatorResult result = runtime.Wake(state, squad, "player_visible medium_range", 1);
+    bool ok = Expect(result.ok, "provider failure regression setup wake succeeds");
+    const xrSim::ActorIntentPlan previousIntent = squad.lastIntent;
+    ok = Expect(runtime.LastCommands().size() >= 2, "provider failure regression setup stores commands") && ok;
+    ok = Expect(runtime.WakeCount() == 1, "provider failure regression setup records wake count") && ok;
+
+    std::vector<std::string> emptyScript;
+    xrSim::RecordedActorIntentProvider exhaustedProvider(emptyScript);
+    runtime.SetProvider(&exhaustedProvider);
+
+    result = runtime.Wake(state, squad, "player_visible medium_range", 2);
+
+    ok = Expect(!result.ok, "actor runtime returns value failure when provider is exhausted") && ok;
+    ok = Expect(runtime.LastCommands().empty(), "actor runtime clears last commands when provider fails") && ok;
+    ok = Expect(runtime.WakeCount() == 1, "actor runtime does not increment wake count on provider failure") && ok;
+    ok = Expect(squad.lastIntent.goal == previousIntent.goal, "actor runtime preserves prior intent on provider failure") && ok;
+    return ok;
+}
+
+bool TestActorRuntimePreservesLastIntentWhenExecutionFails()
+{
+    xrSim::WorldState state;
+    state.CreateRegion("debug_region", 100);
+    state.CreateSpecies("blind_dog");
+
+    xrSim::ActorAgentRecord squad = xrSim::MakeDebugSquadAgent();
+    xrSim::ActorRuntime runtime;
+    xrSim::DeterministicActorIntentProvider deterministicProvider;
+    runtime.SetProvider(&deterministicProvider);
+
+    xrSim::ActuatorResult result = runtime.Wake(state, squad, "player_visible medium_range", 1);
+    bool ok = Expect(result.ok, "execution failure regression setup wake succeeds");
+    const xrSim::ActorIntentPlan previousIntent = squad.lastIntent;
+    ok = Expect(runtime.LastCommands().size() >= 2, "execution failure regression setup stores commands") && ok;
+    ok = Expect(runtime.WakeCount() == 1, "execution failure regression setup records wake count") && ok;
+
+    std::vector<std::string> script;
+    script.push_back(
+        "xrsim_actor_intent_v1\n"
+        "goal survive_and_delay_player\n"
+        "stance reckless\n"
+        "duration_ms 1000\n"
+        "action stalk target_player crescent\n"
+        "end\n");
+    xrSim::RecordedActorIntentProvider illegalPlanProvider(script);
+    runtime.SetProvider(&illegalPlanProvider);
+
+    result = runtime.Wake(state, squad, "player_visible medium_range", 2);
+
+    ok = Expect(!result.ok, "actor runtime returns value failure when execution rejects plan") && ok;
+    ok = Expect(runtime.LastCommands().empty(), "actor runtime clears last commands when execution fails") && ok;
+    ok = Expect(runtime.WakeCount() == 1, "actor runtime does not increment wake count on execution failure") && ok;
+    ok = Expect(squad.lastIntent.goal == previousIntent.goal, "actor runtime preserves prior intent on execution failure") && ok;
+    ok = Expect(squad.lastIntent.stance == previousIntent.stance, "actor runtime keeps previous stance on execution failure") && ok;
+    return ok;
+}
+
 bool TestNullAgentWakeAppliesDeterministicIntent()
 {
     xrSim::WorldState state;
@@ -1166,6 +1234,8 @@ int main()
     ok = TestActorRuntimeWakesDebugSquad() && ok;
     ok = TestActorRuntimeWakesDebugMutantPack() && ok;
     ok = TestRecordedActorProviderExhaustionFailsAsValue() && ok;
+    ok = TestActorRuntimeClearsLastCommandsWhenProviderFails() && ok;
+    ok = TestActorRuntimePreservesLastIntentWhenExecutionFails() && ok;
     ok = TestNullAgentWakeAppliesDeterministicIntent() && ok;
     ok = TestBridgeDebugVerbs() && ok;
     ok = TestBridgeSnapshotVerbs() && ok;

@@ -90,3 +90,35 @@ Results:
 
 - `ActorRuntime` only refreshes `m_lastCommands` on successful execution, matching the brief implementation. A failed wake leaves the previous command ledger intact, which may or may not be the desired long-term debugging behavior.
 - The deterministic provider currently keys only on actor scope, which is appropriate for the fixture layer but intentionally not rich enough for live runtime behavior.
+
+## Fix Follow-Up
+
+### Changed Files
+
+- `/Users/rz/OpenXVibeRay/src/xrEngine/xrSim/xrSimActorRuntime.cpp`
+- `/Users/rz/OpenXVibeRay/src/xrEngine/xrSim/tests/xrSimWorldStateTests.cpp`
+
+### What Changed
+
+- Cleared `ActorRuntime::m_lastCommands` at the start of each `Wake` so `LastCommands()` now reflects the most recent wake attempt, including provider or execution failure.
+- Moved `actor.lastIntent` assignment to the post-actuation success path so failed execution no longer records a non-embodied plan.
+- Added focused regression coverage for both failure paths:
+  - provider exhaustion after a successful wake
+  - execution rejection of an illegal recorded plan after a successful wake
+- The new regression tests verify failed wakes return `ok=false`, leave `LastCommands()` empty, do not increment `WakeCount()`, and preserve the actor's previously embodied intent.
+
+### Exact Command Run
+
+```bash
+cmake --build build -j10 --target xrSimWorldStateTests && ./bin/arm64/Release/xrSimWorldStateTests
+```
+
+### Output Summary
+
+- `xrSimWorldStateTests` rebuilt successfully.
+- `./bin/arm64/Release/xrSimWorldStateTests` exited with code `0`.
+- Before the fix, the red run failed with:
+  - `FAIL: actor runtime clears last commands when provider fails`
+  - `FAIL: actor runtime clears last commands when execution fails`
+  - `FAIL: actor runtime keeps previous stance on execution failure`
+- After the fix, no failing test output was emitted.

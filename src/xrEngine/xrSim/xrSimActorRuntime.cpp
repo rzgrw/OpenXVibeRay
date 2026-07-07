@@ -65,6 +65,8 @@ void ActorRuntime::SetProvider(IActorIntentProvider* provider) { m_provider = pr
 ActuatorResult ActorRuntime::Wake(
     WorldState& world, ActorAgentRecord& actor, const std::string& situation, uint32_t gameDay)
 {
+    m_lastCommands.clear();
+
     ActorWakeContext context;
     context.actor = actor;
     context.observation = BuildActorObservation(actor, world, situation);
@@ -80,10 +82,10 @@ ActuatorResult ActorRuntime::Wake(
         return failed;
     }
 
-    actor.lastIntent = m_lastProviderResult.plan;
     ActuatorResult executed = ExecuteActorIntent(world, actor, m_lastProviderResult.plan, gameDay);
     if (executed.ok)
     {
+        actor.lastIntent = m_lastProviderResult.plan;
         m_lastCommands = executed.commands;
         ++m_wakeCount;
     }
