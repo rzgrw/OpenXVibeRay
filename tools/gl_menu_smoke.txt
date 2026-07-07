@@ -1,0 +1,6 @@
+# GL menu smoke: launch to menu, prove bridge/screenshot/quit.
+hello
+state
+shot gl_menu_smoke
+cmd flush
+cmd quit

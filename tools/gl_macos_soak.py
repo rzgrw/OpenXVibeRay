@@ -96,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
             {
                 "dry_run": True,
                 "scenario": str(args.scenario),
+                "step_count": len(steps),
                 "steps": [step.raw for step in steps],
             },
         )

@@ -75,5 +75,24 @@ class SummaryWriterTests(unittest.TestCase):
             self.assertTrue(path.read_text().endswith("\n"))
 
 
+class DryRunCliTests(unittest.TestCase):
+    def test_dry_run_writes_summary(self):
+        from tools.gl_macos_soak import main
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scenario = root / "scenario.txt"
+            artifacts = root / "artifacts"
+            scenario.write_text("hello\nstate\n")
+
+            rc = main(["--dry-run", "--scenario", str(scenario), "--artifacts", str(artifacts)])
+
+            self.assertEqual(0, rc)
+            summary = json.loads((artifacts / "summary.json").read_text())
+            self.assertEqual(True, summary["dry_run"])
+            self.assertEqual(2, summary["step_count"])
+            self.assertEqual(["hello", "state"], summary["steps"])
+
+
 if __name__ == "__main__":
     unittest.main()
