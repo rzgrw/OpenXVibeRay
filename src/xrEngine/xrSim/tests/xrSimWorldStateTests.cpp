@@ -1187,6 +1187,37 @@ bool TestAgentBridgeAliases()
     ok = Expect(out == "ZONE#1 provider=null wakes=1 log=1", "agent.tree reports deterministic tree shape") && ok;
     return ok;
 }
+
+bool TestActorBridgeVerbs()
+{
+    bool verbOk = false;
+    std::string out = xrSim::HandleBridgeVerb("ai.reset", "", verbOk);
+    bool ok = Expect(verbOk, "actor bridge setup reset succeeds");
+
+    out = xrSim::HandleBridgeVerb("agent.actor.list", "", verbOk);
+    ok = Expect(verbOk, "agent.actor.list succeeds") && ok;
+    ok = Expect(out.find("SQUAD#101") != std::string::npos, "agent.actor.list reports squad") && ok;
+    ok = Expect(out.find("MUTANT_PACK#201") != std::string::npos, "agent.actor.list reports mutant pack") && ok;
+
+    out = xrSim::HandleBridgeVerb("agent.actor.observe", "squad", verbOk);
+    ok = Expect(verbOk, "agent.actor.observe squad succeeds") && ok;
+    ok = Expect(out.find("scope SQUAD") != std::string::npos, "agent.actor.observe squad reports scope") && ok;
+
+    out = xrSim::HandleBridgeVerb("agent.actor.wake", "squad", verbOk);
+    ok = Expect(verbOk, "agent.actor.wake squad succeeds") && ok;
+    ok = Expect(out.find("goal=survive_and_delay_player") != std::string::npos,
+        "agent.actor.wake squad reports goal") && ok;
+
+    out = xrSim::HandleBridgeVerb("agent.actor.wake", "mutant_pack", verbOk);
+    ok = Expect(verbOk, "agent.actor.wake mutant_pack succeeds") && ok;
+    ok = Expect(out.find("goal=feed_without_losing_alpha") != std::string::npos,
+        "agent.actor.wake mutant pack reports goal") && ok;
+
+    out = xrSim::HandleBridgeVerb("agent.actor.commands", "", verbOk);
+    ok = Expect(verbOk, "agent.actor.commands succeeds") && ok;
+    ok = Expect(out != "empty", "agent.actor.commands reports actuator stream") && ok;
+    return ok;
+}
 } // namespace
 
 int main()
@@ -1242,5 +1273,6 @@ int main()
     ok = TestBridgeReplayVerb() && ok;
     ok = TestBridgeNullAgentWakeVerb() && ok;
     ok = TestAgentBridgeAliases() && ok;
+    ok = TestActorBridgeVerbs() && ok;
     return ok ? 0 : 1;
 }

@@ -1,6 +1,7 @@
 #include "xrSim/xrSimBridge.h"
 #include "xrSim/xrSimAgentProvider.h"
 #include "xrSim/xrSimAnthropicTransport.h"
+#include "xrSim/xrSimActorRuntime.h"
 #include "xrSim/xrSimNullAgent.h"
 #include "xrSim/xrSimWorldState.h"
 
@@ -13,6 +14,9 @@ namespace
 {
 WorldState g_debugWorld;
 NullAgentRuntime g_nullAgent;
+ActorRuntime g_actorRuntime;
+ActorAgentRecord g_debugSquad;
+ActorAgentRecord g_debugMutantPack;
 uint32_t g_nextSeq = 1;
 bool g_initialized = false;
 
@@ -20,6 +24,9 @@ void ResetDebugWorld()
 {
     g_debugWorld = WorldState{};
     g_nullAgent = NullAgentRuntime{};
+    g_actorRuntime = ActorRuntime{};
+    g_debugSquad = MakeDebugSquadAgent();
+    g_debugMutantPack = MakeDebugMutantPackAgent();
     const Handle region = g_debugWorld.CreateRegion("debug_region", 100);
     const Handle species = g_debugWorld.CreateSpecies("blind_dog");
     g_debugWorld.SetPopulation(region, species, 50);
@@ -115,6 +122,36 @@ std::string WakeNullAgent(bool& ok)
     g_nextSeq = uint32_t(g_debugWorld.ToolLog().size() + 1);
     return "xrsim wake applied_delta=" + std::to_string(result.appliedDelta) +
         " wakes=" + std::to_string(g_nullAgent.WakeCount());
+}
+
+ActorAgentRecord* FindDebugActor(const std::string& name)
+{
+    EnsureDebugWorld();
+    if (name == "squad")
+        return &g_debugSquad;
+    if (name == "mutant_pack")
+        return &g_debugMutantPack;
+    return nullptr;
+}
+
+std::string WakeDebugActor(const std::string& payload, bool& ok)
+{
+    ActorAgentRecord* actor = FindDebugActor(payload);
+    if (!actor)
+    {
+        ok = false;
+        return "unknown actor: " + payload;
+    }
+
+    const std::string situation = payload == "mutant_pack" ? "heard_gunfire" : "player_visible medium_range";
+    const ActuatorResult result = g_actorRuntime.Wake(g_debugWorld, *actor, situation, 0);
+    ok = result.ok;
+    if (!result.ok)
+        return result.reason;
+
+    return std::string("actor wake scope=") + ActorScopeName(actor->scope) + " id=" + std::to_string(actor->agentId) +
+        " goal=" + actor->lastIntent.goal + " commands=" + std::to_string(result.commands.size()) +
+        " applied_delta=" + std::to_string(result.appliedDelta);
 }
 } // namespace
 
@@ -218,6 +255,36 @@ std::string HandleBridgeVerb(const std::string& verb, const std::string& payload
             return "unknown agent id: " + payload;
         }
         return WakeNullAgent(ok);
+    }
+
+    if (verb == "agent.actor.list")
+    {
+        EnsureDebugWorld();
+        ok = true;
+        return "SQUAD#101 debug_stalker_squad | MUTANT_PACK#201 debug_blind_dog_pack";
+    }
+
+    if (verb == "agent.actor.observe")
+    {
+        ActorAgentRecord* actor = FindDebugActor(payload);
+        if (!actor)
+        {
+            ok = false;
+            return "unknown actor: " + payload;
+        }
+        const std::string situation = payload == "mutant_pack" ? "heard_gunfire" : "player_visible medium_range";
+        ok = true;
+        return BuildActorObservation(*actor, g_debugWorld, situation);
+    }
+
+    if (verb == "agent.actor.wake")
+        return WakeDebugActor(payload, ok);
+
+    if (verb == "agent.actor.commands")
+    {
+        EnsureDebugWorld();
+        ok = true;
+        return FormatActuatorCommands(g_actorRuntime.LastCommands());
     }
 
     if (verb == "agent.tree")
