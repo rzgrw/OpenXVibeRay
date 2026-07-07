@@ -141,6 +141,24 @@ Shape of it (per the spec and the design decisions in project memory):
 
 Because GL already runs the full game, the AI work does **not** need the renderer rewrite — build against the GL runtime and the agent bridge (§3) as the verification harness.
 
+### 5.1 xrSim foundation checkpoint
+
+The first AI substrate is on `codex/ai-zone-foundation`: `src/xrEngine/xrSim/` contains a deterministic coarse `WorldState`, stable index+generation handles, clamped `adjust_population`, and an append-only tool log. It is intentionally provider-free: this is the replayable C++ substrate the LLM layer will drive later.
+
+Debug bridge verbs are available in `-agent_bridge` sessions:
+
+```bash
+python3 tools/agentctl.py <sock> ai.reset
+python3 tools/agentctl.py <sock> ai.observe
+python3 tools/agentctl.py <sock> ai.inject adjust_population debug_region blind_dog 500
+```
+
+Smoke script:
+
+```bash
+python3 tools/gl_macos_soak.py --scenario tools/ai_zone_smoke.txt --artifacts artifacts/ai_zone_smoke
+```
+
 ---
 
 ## 6. Conventions & key directories

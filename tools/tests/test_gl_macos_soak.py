@@ -79,6 +79,15 @@ class SummaryWriterTests(unittest.TestCase):
 
 
 class DryRunCliTests(unittest.TestCase):
+    def test_ai_zone_smoke_script_exercises_ai_bridge_verbs(self):
+        scenario = Path("tools/ai_zone_smoke.txt")
+        steps = parse_scenario_lines(scenario.read_text().splitlines())
+
+        commands = [step.raw for step in steps if step.kind == "bridge"]
+        self.assertIn("ai.reset", commands)
+        self.assertIn("ai.observe", commands)
+        self.assertIn("ai.inject adjust_population debug_region blind_dog 500", commands)
+
     def test_dry_run_writes_summary(self):
         from tools.gl_macos_soak import main
 
