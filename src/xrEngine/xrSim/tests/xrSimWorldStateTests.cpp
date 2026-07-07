@@ -1,5 +1,6 @@
 #include "xrSim/xrSimAgentProvider.h"
 #include "xrSim/xrSimAnthropicTransport.h"
+#include "xrSim/xrSimActorIntent.h"
 #include "xrSim/xrSimWorldState.h"
 #include "xrSim/xrSimBridge.h"
 #include "xrSim/xrSimNullAgent.h"
@@ -574,6 +575,56 @@ bool TestAnthropicHttpTransportFactoryMatchesAvailability()
     return ok;
 }
 
+bool TestActorIntentParserAcceptsSquadPlan()
+{
+    const char* text =
+        "xrsim_actor_intent_v1\n"
+        "goal survive_and_delay_player\n"
+        "stance cautious\n"
+        "duration_ms 3500\n"
+        "action move_to cover_node_12\n"
+        "action fire_pattern target_player burst_short\n"
+        "action vocalize ally_3 fall_back\n"
+        "memory player_used_grenade_aggressively\n"
+        "end\n";
+
+    const xrSim::ActorIntentParseResult parsed = xrSim::ParseActorIntentPlan(text);
+    bool ok = Expect(parsed.ok, "actor intent parser accepts valid squad plan");
+    ok = Expect(parsed.plan.goal == "survive_and_delay_player", "actor intent parser keeps goal") && ok;
+    ok = Expect(parsed.plan.stance == "cautious", "actor intent parser keeps stance") && ok;
+    ok = Expect(parsed.plan.durationMs == 3500, "actor intent parser keeps duration") && ok;
+    ok = Expect(parsed.plan.actions.size() == 3, "actor intent parser keeps actions") && ok;
+    if (parsed.plan.actions.size() == 3)
+    {
+        ok = Expect(parsed.plan.actions[0].verb == "move_to", "actor intent parser keeps first action verb") && ok;
+        ok = Expect(parsed.plan.actions[0].target == "cover_node_12", "actor intent parser keeps first action target") && ok;
+        ok = Expect(parsed.plan.actions[1].arg0 == "burst_short", "actor intent parser keeps action argument") && ok;
+    }
+    ok = Expect(parsed.plan.memories.size() == 1, "actor intent parser keeps memory records") && ok;
+    return ok;
+}
+
+bool TestActorIntentParserAcceptsCoast()
+{
+    const xrSim::ActorIntentParseResult parsed = xrSim::ParseActorIntentPlan(
+        "xrsim_actor_intent_v1\n"
+        "coast\n"
+        "end\n");
+
+    bool ok = Expect(parsed.ok, "actor intent parser accepts coast");
+    ok = Expect(parsed.plan.coast, "actor intent parser marks coast") && ok;
+    ok = Expect(parsed.plan.actions.empty(), "actor intent coast has no actions") && ok;
+    return ok;
+}
+
+bool TestActorIntentParserRejectsBadVersionAsValue()
+{
+    const xrSim::ActorIntentParseResult parsed = xrSim::ParseActorIntentPlan("xrsim_actor_intent_v2\nend\n");
+    bool ok = Expect(!parsed.ok, "actor intent parser rejects bad version as value");
+    ok = Expect(parsed.reason.find("version") != std::string::npos, "actor intent parser explains bad version") && ok;
+    return ok;
+}
+
 bool TestNullAgentWakeAppliesDeterministicIntent()
 {
     xrSim::WorldState state;
@@ -749,6 +800,9 @@ int main()
     ok = TestAnthropicProviderShellUsesInjectedTransport() && ok;
     ok = TestAnthropicProviderShellCoastsOnTransportFailure() && ok;
     ok = TestAnthropicHttpTransportFactoryMatchesAvailability() && ok;
+    ok = TestActorIntentParserAcceptsSquadPlan() && ok;
+    ok = TestActorIntentParserAcceptsCoast() && ok;
+    ok = TestActorIntentParserRejectsBadVersionAsValue() && ok;
     ok = TestNullAgentWakeAppliesDeterministicIntent() && ok;
     ok = TestBridgeDebugVerbs() && ok;
     ok = TestBridgeSnapshotVerbs() && ok;
