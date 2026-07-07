@@ -13,6 +13,7 @@ ai.log
 ai.replay
 agent.list
 agent.provider
+agent.provider live
 agent.prompt
 agent.wake 1
 agent.tree

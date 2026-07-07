@@ -9,6 +9,24 @@
 
 namespace
 {
+class FakeAnthropicTransport : public xrSim::IAnthropicTransport
+{
+public:
+    xrSim::AnthropicTransportResult Send(
+        const xrSim::AgentProviderConfig& config, const xrSim::AnthropicMessagesRequest& request) override
+    {
+        seenModel = config.model;
+        seenPath = request.path;
+        ++calls;
+        return result;
+    }
+
+    xrSim::AnthropicTransportResult result;
+    std::string seenModel;
+    std::string seenPath;
+    uint32_t calls = 0;
+};
+
 bool Expect(bool condition, const char* message)
 {
     if (condition)
@@ -354,6 +372,190 @@ bool TestRuntimeCoastsOnProviderCoastResult()
     return ok;
 }
 
+bool TestAgentProviderConfigDefaultsToSonnetTier()
+{
+    std::vector<xrSim::AgentConfigVar> vars;
+    const xrSim::AgentProviderConfig config = xrSim::BuildAgentProviderConfig(vars);
+
+    bool ok = Expect(config.enabled, "agent provider config defaults enabled for live shell");
+    ok = Expect(config.provider == "anthropic", "agent provider config defaults to anthropic") && ok;
+    ok = Expect(config.model == "claude-sonnet-5", "agent provider config defaults to sonnet tier") && ok;
+    ok = Expect(config.apiKey.empty(), "agent provider config does not invent api key") && ok;
+    ok = Expect(config.timeoutMs == 30000, "agent provider config uses bounded default timeout") && ok;
+    return ok;
+}
+
+bool TestAgentProviderConfigReadsEnvironmentValues()
+{
+    std::vector<xrSim::AgentConfigVar> vars;
+    vars.push_back(xrSim::AgentConfigVar{ "XRAY_AGENT_PROVIDER", "anthropic" });
+    vars.push_back(xrSim::AgentConfigVar{ "XRAY_AGENT_MODEL", "claude-sonnet-5-test" });
+    vars.push_back(xrSim::AgentConfigVar{ "XRAY_AGENT_API_KEY", "secret" });
+    vars.push_back(xrSim::AgentConfigVar{ "XRAY_AGENT_TIMEOUT_MS", "1200" });
+
+    const xrSim::AgentProviderConfig config = xrSim::BuildAgentProviderConfig(vars);
+    bool ok = Expect(config.provider == "anthropic", "agent provider config reads provider");
+    ok = Expect(config.model == "claude-sonnet-5-test", "agent provider config reads model") && ok;
+    ok = Expect(config.apiKey == "secret", "agent provider config reads api key") && ok;
+    ok = Expect(config.timeoutMs == 1200, "agent provider config reads timeout") && ok;
+    return ok;
+}
+
+bool TestAnthropicProviderShellCoastsWithoutApiKey()
+{
+    xrSim::AgentProviderConfig config;
+    config.provider = "anthropic";
+    config.model = "claude-sonnet-5";
+    config.enabled = true;
+    xrSim::AnthropicAgentProviderShell provider(config);
+
+    xrSim::AgentWakeContext context;
+    context.agentId = 1;
+    context.gameDay = 2;
+    context.observation = "regions=1 species=1 cohorts=1 log=0 pop{debug_region:blind_dog=50}";
+
+    const xrSim::AgentProviderResult result = provider.Wake(context);
+    bool ok = Expect(result.ok, "anthropic shell missing key succeeds as coast");
+    ok = Expect(result.coast, "anthropic shell missing key marks coast") && ok;
+    ok = Expect(result.provider == "anthropic", "anthropic shell stamps provider") && ok;
+    ok = Expect(result.model == "claude-sonnet-5", "anthropic shell stamps model") && ok;
+    ok = Expect(result.coastReason == "missing_api_key", "anthropic shell explains missing key coast") && ok;
+    return ok;
+}
+
+bool TestAgentProviderLedgerFormatsReplayMetadata()
+{
+    xrSim::AgentWakeContext context;
+    context.agentId = 7;
+    context.gameDay = 11;
+
+    xrSim::AgentProviderResult result;
+    result.ok = true;
+    result.coast = true;
+    result.provider = "anthropic";
+    result.model = "claude-sonnet-5";
+    result.coastReason = "missing_api_key";
+
+    const std::string ledger = xrSim::FormatAgentProviderLedgerRecord(4, context, result, 123);
+    bool ok = Expect(ledger.find("xrsim_agent_provider_record_v1") == 0, "agent provider ledger has stable header");
+    ok = Expect(ledger.find("seq=4") != std::string::npos, "agent provider ledger records seq") && ok;
+    ok = Expect(ledger.find("agent_id=7") != std::string::npos, "agent provider ledger records agent id") && ok;
+    ok = Expect(ledger.find("game_day=11") != std::string::npos, "agent provider ledger records game day") && ok;
+    ok = Expect(ledger.find("provider=anthropic") != std::string::npos, "agent provider ledger records provider") && ok;
+    ok = Expect(ledger.find("model=claude-sonnet-5") != std::string::npos, "agent provider ledger records model") && ok;
+    ok = Expect(ledger.find("coast=1") != std::string::npos, "agent provider ledger records coast") && ok;
+    ok = Expect(ledger.find("coast_reason=missing_api_key") != std::string::npos,
+        "agent provider ledger records coast reason") && ok;
+    ok = Expect(ledger.find("latency_ms=123") != std::string::npos, "agent provider ledger records latency") && ok;
+    return ok;
+}
+
+bool TestAnthropicRequestEnvelopeUsesMessagesApiShape()
+{
+    xrSim::AgentProviderConfig config;
+    config.provider = "anthropic";
+    config.model = "claude-sonnet-5";
+
+    xrSim::AgentWakeContext context;
+    context.agentId = 9;
+    context.gameDay = 13;
+    context.observation = "quote=\"zone\"\nslash=\\";
+
+    const xrSim::AnthropicMessagesRequest request = xrSim::BuildAnthropicMessagesRequest(config, context, 768);
+    bool ok = Expect(request.method == "POST", "anthropic request uses POST");
+    ok = Expect(request.path == "/v1/messages", "anthropic request targets messages api") && ok;
+    ok = Expect(request.anthropicVersion == "2023-06-01", "anthropic request pins api version") && ok;
+    ok = Expect(request.contentType == "application/json", "anthropic request uses json content type") && ok;
+    ok = Expect(request.body.find("\"model\":\"claude-sonnet-5\"") != std::string::npos,
+        "anthropic request includes model") && ok;
+    ok = Expect(request.body.find("\"max_tokens\":768") != std::string::npos,
+        "anthropic request includes max tokens") && ok;
+    ok = Expect(request.body.find("\"messages\":[{\"role\":\"user\",\"content\":\"") != std::string::npos,
+        "anthropic request includes user message") && ok;
+    ok = Expect(request.body.find("quote=\\\"zone\\\"") != std::string::npos,
+        "anthropic request escapes quotes") && ok;
+    ok = Expect(request.body.find("slash=\\\\") != std::string::npos,
+        "anthropic request escapes backslash") && ok;
+    return ok;
+}
+
+bool TestAnthropicTextResponseParsesThroughAgentCodec()
+{
+    const char* response =
+        "{\"id\":\"msg_test\",\"type\":\"message\",\"role\":\"assistant\","
+        "\"content\":[{\"type\":\"text\",\"text\":\"xrsim_agent_response_v1\\ncoast\\nend\\n\"}],"
+        "\"model\":\"claude-sonnet-5\",\"stop_reason\":\"end_turn\"}";
+
+    const xrSim::AgentProviderResult result =
+        xrSim::ParseAnthropicMessagesTextResponse(response, "anthropic", "claude-sonnet-5");
+    bool ok = Expect(result.ok, "anthropic text response parses through agent codec");
+    ok = Expect(result.coast, "anthropic text response preserves coast") && ok;
+    ok = Expect(result.provider == "anthropic", "anthropic text response stamps provider") && ok;
+    ok = Expect(result.model == "claude-sonnet-5", "anthropic text response stamps model") && ok;
+    return ok;
+}
+
+bool TestAnthropicProviderShellUsesInjectedTransport()
+{
+    xrSim::AgentProviderConfig config;
+    config.provider = "anthropic";
+    config.model = "claude-sonnet-5";
+    config.apiKey = "secret";
+
+    FakeAnthropicTransport transport;
+    transport.result.ok = true;
+    transport.result.status = 200;
+    transport.result.latencyMs = 44;
+    transport.result.body =
+        "{\"content\":[{\"type\":\"text\",\"text\":\"xrsim_agent_response_v1\\n"
+        "intent adjust_population debug_region blind_dog 3\\nend\\n\"}]}";
+
+    xrSim::AnthropicAgentProviderShell provider(config);
+    provider.SetTransport(&transport);
+
+    xrSim::AgentWakeContext context;
+    context.agentId = 1;
+    context.gameDay = 2;
+    context.observation = "regions=1 species=1 cohorts=1 log=0 pop{debug_region:blind_dog=50}";
+
+    const xrSim::AgentProviderResult result = provider.Wake(context);
+    bool ok = Expect(result.ok, "anthropic shell accepts injected transport response");
+    ok = Expect(!result.coast, "anthropic shell transport response is not coast") && ok;
+    ok = Expect(result.intents.size() == 1, "anthropic shell transport emits one intent") && ok;
+    if (result.intents.size() == 1)
+        ok = Expect(result.intents[0].delta == 3, "anthropic shell transport preserves delta") && ok;
+    ok = Expect(transport.calls == 1, "anthropic shell calls injected transport once") && ok;
+    ok = Expect(transport.seenModel == "claude-sonnet-5", "anthropic shell transport sees model") && ok;
+    ok = Expect(transport.seenPath == "/v1/messages", "anthropic shell transport sees messages path") && ok;
+    return ok;
+}
+
+bool TestAnthropicProviderShellCoastsOnTransportFailure()
+{
+    xrSim::AgentProviderConfig config;
+    config.provider = "anthropic";
+    config.model = "claude-sonnet-5";
+    config.apiKey = "secret";
+
+    FakeAnthropicTransport transport;
+    transport.result.ok = false;
+    transport.result.error = "timeout";
+    transport.result.latencyMs = 600;
+
+    xrSim::AnthropicAgentProviderShell provider(config);
+    provider.SetTransport(&transport);
+
+    xrSim::AgentWakeContext context;
+    context.agentId = 1;
+
+    const xrSim::AgentProviderResult result = provider.Wake(context);
+    bool ok = Expect(result.ok, "anthropic shell transport failure succeeds as coast");
+    ok = Expect(result.coast, "anthropic shell transport failure marks coast") && ok;
+    ok = Expect(result.coastReason == "transport_error", "anthropic shell transport failure records coast reason") && ok;
+    ok = Expect(result.error == "timeout", "anthropic shell transport failure keeps error detail") && ok;
+    return ok;
+}
+
 bool TestNullAgentWakeAppliesDeterministicIntent()
 {
     xrSim::WorldState state;
@@ -478,6 +680,11 @@ bool TestAgentBridgeAliases()
     ok = Expect(verbOk, "agent.provider succeeds") && ok;
     ok = Expect(out == "id=1 provider=null model=deterministic-null", "agent.provider reports provider contract") && ok;
 
+    out = xrSim::HandleBridgeVerb("agent.provider", "live", verbOk);
+    ok = Expect(verbOk, "agent.provider live succeeds") && ok;
+    ok = Expect(out.find("provider=anthropic") != std::string::npos, "agent.provider live reports provider") && ok;
+    ok = Expect(out.find("model=claude-sonnet-5") != std::string::npos, "agent.provider live reports sonnet model") && ok;
+
     out = xrSim::HandleBridgeVerb("agent.prompt", "", verbOk);
     ok = Expect(verbOk, "agent.prompt succeeds") && ok;
     ok = Expect(out.find("xrsim_agent_wake_v1") == 0, "agent.prompt returns versioned prompt") && ok;
@@ -514,6 +721,14 @@ int main()
     ok = TestAgentResponseParserAcceptsCoastAsNormalValue() && ok;
     ok = TestRecordedTextProviderParsesScriptedWake() && ok;
     ok = TestRuntimeCoastsOnProviderCoastResult() && ok;
+    ok = TestAgentProviderConfigDefaultsToSonnetTier() && ok;
+    ok = TestAgentProviderConfigReadsEnvironmentValues() && ok;
+    ok = TestAnthropicProviderShellCoastsWithoutApiKey() && ok;
+    ok = TestAgentProviderLedgerFormatsReplayMetadata() && ok;
+    ok = TestAnthropicRequestEnvelopeUsesMessagesApiShape() && ok;
+    ok = TestAnthropicTextResponseParsesThroughAgentCodec() && ok;
+    ok = TestAnthropicProviderShellUsesInjectedTransport() && ok;
+    ok = TestAnthropicProviderShellCoastsOnTransportFailure() && ok;
     ok = TestNullAgentWakeAppliesDeterministicIntent() && ok;
     ok = TestBridgeDebugVerbs() && ok;
     ok = TestBridgeSnapshotVerbs() && ok;

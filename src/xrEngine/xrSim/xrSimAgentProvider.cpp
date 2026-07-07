@@ -35,6 +35,98 @@ bool ParseInt32(const std::string& text, int32_t& value)
     value = int32_t(parsed);
     return true;
 }
+
+bool ParseUint32(const std::string& text, uint32_t& value)
+{
+    if (text.empty())
+        return false;
+
+    char* end = nullptr;
+    errno = 0;
+    const unsigned long parsed = std::strtoul(text.c_str(), &end, 10);
+    if (errno != 0 || !end || *end != '\0')
+        return false;
+    if (parsed > std::numeric_limits<uint32_t>::max())
+        return false;
+
+    value = uint32_t(parsed);
+    return true;
+}
+
+std::string FindVar(const std::vector<AgentConfigVar>& vars, const std::string& name)
+{
+    for (const AgentConfigVar& var : vars)
+    {
+        if (var.name == name)
+            return var.value;
+    }
+    return "";
+}
+
+AgentProviderResult CoastResponse(const std::string& provider, const std::string& model, const std::string& reason)
+{
+    AgentProviderResult result;
+    result.ok = true;
+    result.coast = true;
+    result.provider = provider;
+    result.model = model;
+    result.coastReason = reason;
+    return result;
+}
+
+std::string EscapeJsonString(const std::string& text)
+{
+    std::string out;
+    out.reserve(text.size() + 8);
+    for (const char ch : text)
+    {
+        switch (ch)
+        {
+        case '\\': out += "\\\\"; break;
+        case '"': out += "\\\""; break;
+        case '\n': out += "\\n"; break;
+        case '\r': out += "\\r"; break;
+        case '\t': out += "\\t"; break;
+        default: out += ch; break;
+        }
+    }
+    return out;
+}
+
+bool DecodeJsonStringAt(const std::string& text, size_t valueStart, std::string& decoded)
+{
+    decoded.clear();
+    if (valueStart >= text.size() || text[valueStart] != '"')
+        return false;
+
+    for (size_t i = valueStart + 1; i < text.size(); ++i)
+    {
+        const char ch = text[i];
+        if (ch == '"')
+            return true;
+        if (ch != '\\')
+        {
+            decoded += ch;
+            continue;
+        }
+
+        if (++i >= text.size())
+            return false;
+        switch (text[i])
+        {
+        case '"': decoded += '"'; break;
+        case '\\': decoded += '\\'; break;
+        case '/': decoded += '/'; break;
+        case 'n': decoded += '\n'; break;
+        case 'r': decoded += '\r'; break;
+        case 't': decoded += '\t'; break;
+        case 'b': decoded += '\b'; break;
+        case 'f': decoded += '\f'; break;
+        default: return false;
+        }
+    }
+    return false;
+}
 } // namespace
 
 AgentProviderResult NullAgentProvider::Wake(const AgentWakeContext& context)
@@ -53,6 +145,39 @@ AgentProviderResult NullAgentProvider::Wake(const AgentWakeContext& context)
     intent.delta = 5;
     result.intents.push_back(intent);
     return result;
+}
+
+AnthropicAgentProviderShell::AnthropicAgentProviderShell(const AgentProviderConfig& config) : m_config(config) {}
+
+void AnthropicAgentProviderShell::SetTransport(IAnthropicTransport* transport) { m_transport = transport; }
+
+AgentProviderResult AnthropicAgentProviderShell::Wake(const AgentWakeContext& context)
+{
+    if (!m_config.enabled)
+        return CoastResponse(m_config.provider, m_config.model, "provider_disabled");
+    if (m_config.provider != "anthropic")
+        return CoastResponse(m_config.provider, m_config.model, "unsupported_provider");
+    if (m_config.apiKey.empty())
+        return CoastResponse(m_config.provider, m_config.model, "missing_api_key");
+    if (!m_transport)
+        return CoastResponse(m_config.provider, m_config.model, "network_adapter_not_linked");
+
+    const AnthropicMessagesRequest request = BuildAnthropicMessagesRequest(m_config, context, 1024);
+    const AnthropicTransportResult transportResult = m_transport->Send(m_config, request);
+    if (!transportResult.ok)
+    {
+        AgentProviderResult result = CoastResponse(m_config.provider, m_config.model, "transport_error");
+        result.error = transportResult.error;
+        return result;
+    }
+    if (transportResult.status != 200)
+    {
+        AgentProviderResult result = CoastResponse(m_config.provider, m_config.model, "http_status");
+        result.error = std::to_string(transportResult.status);
+        return result;
+    }
+
+    return ParseAnthropicMessagesTextResponse(transportResult.body, m_config.provider, m_config.model);
 }
 
 RecordedAgentProvider::RecordedAgentProvider(const std::vector<AgentProviderResult>& script) : m_script(script) {}
@@ -159,6 +284,137 @@ AgentProviderResult ParseAgentProviderResponse(
         return FailResponse(provider, model, "agent response contained no intents");
 
     return result;
+}
+
+AgentProviderConfig BuildAgentProviderConfig(const std::vector<AgentConfigVar>& vars)
+{
+    AgentProviderConfig config;
+
+    const std::string provider = FindVar(vars, "XRAY_AGENT_PROVIDER");
+    if (!provider.empty())
+    {
+        config.provider = provider;
+        config.enabled = provider != "off" && provider != "disabled";
+    }
+
+    const std::string model = FindVar(vars, "XRAY_AGENT_MODEL");
+    if (!model.empty())
+        config.model = model;
+
+    const std::string genericKey = FindVar(vars, "XRAY_AGENT_API_KEY");
+    const std::string anthropicKey = FindVar(vars, "ANTHROPIC_API_KEY");
+    config.apiKey = genericKey.empty() ? anthropicKey : genericKey;
+
+    uint32_t timeoutMs = 0;
+    if (ParseUint32(FindVar(vars, "XRAY_AGENT_TIMEOUT_MS"), timeoutMs) && timeoutMs > 0)
+        config.timeoutMs = timeoutMs;
+
+    return config;
+}
+
+AgentProviderConfig LoadAgentProviderConfigFromEnvironment()
+{
+    std::vector<AgentConfigVar> vars;
+    const char* names[] = {
+        "XRAY_AGENT_PROVIDER",
+        "XRAY_AGENT_MODEL",
+        "XRAY_AGENT_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "XRAY_AGENT_TIMEOUT_MS",
+    };
+
+    for (const char* name : names)
+    {
+        const char* value = std::getenv(name);
+        if (value)
+            vars.push_back(AgentConfigVar{ name, value });
+    }
+
+    return BuildAgentProviderConfig(vars);
+}
+
+std::string DescribeAgentProviderConfig(const AgentProviderConfig& config)
+{
+    std::string state = "ready";
+    std::string reason;
+    if (!config.enabled)
+    {
+        state = "coast";
+        reason = "provider_disabled";
+    }
+    else if (config.apiKey.empty())
+    {
+        state = "coast";
+        reason = "missing_api_key";
+    }
+
+    std::ostringstream out;
+    out << "provider=" << config.provider << " model=" << config.model << " state=" << state;
+    if (!reason.empty())
+        out << " reason=" << reason;
+    out << " timeout_ms=" << config.timeoutMs;
+    return out.str();
+}
+
+std::string FormatAgentProviderLedgerRecord(
+    uint32_t seq, const AgentWakeContext& context, const AgentProviderResult& result, uint32_t latencyMs)
+{
+    std::ostringstream out;
+    out << "xrsim_agent_provider_record_v1";
+    out << " seq=" << seq;
+    out << " agent_id=" << context.agentId;
+    out << " game_day=" << context.gameDay;
+    out << " provider=" << result.provider;
+    out << " model=" << result.model;
+    out << " ok=" << (result.ok ? 1 : 0);
+    out << " coast=" << (result.coast ? 1 : 0);
+    out << " intents=" << result.intents.size();
+    if (!result.error.empty())
+        out << " error=" << result.error;
+    if (!result.coastReason.empty())
+        out << " coast_reason=" << result.coastReason;
+    out << " latency_ms=" << latencyMs;
+    return out.str();
+}
+
+AnthropicMessagesRequest BuildAnthropicMessagesRequest(
+    const AgentProviderConfig& config, const AgentWakeContext& context, uint32_t maxTokens)
+{
+    AnthropicMessagesRequest request;
+    request.method = "POST";
+    request.path = "/v1/messages";
+    request.anthropicVersion = "2023-06-01";
+    request.contentType = "application/json";
+
+    const std::string prompt = BuildAgentWakePrompt(context);
+    std::ostringstream body;
+    body << "{";
+    body << "\"model\":\"" << EscapeJsonString(config.model) << "\",";
+    body << "\"max_tokens\":" << maxTokens << ",";
+    body << "\"messages\":[{\"role\":\"user\",\"content\":\"" << EscapeJsonString(prompt) << "\"}]";
+    body << "}";
+    request.body = body.str();
+    return request;
+}
+
+AgentProviderResult ParseAnthropicMessagesTextResponse(
+    const std::string& text, const std::string& provider, const std::string& model)
+{
+    const std::string typeMarker = "\"type\":\"text\"";
+    const size_t typePos = text.find(typeMarker);
+    if (typePos == std::string::npos)
+        return FailResponse(provider, model, "anthropic response missing text block");
+
+    const std::string textMarker = "\"text\":\"";
+    const size_t textPos = text.find(textMarker, typePos);
+    if (textPos == std::string::npos)
+        return FailResponse(provider, model, "anthropic response missing text content");
+
+    std::string responseText;
+    if (!DecodeJsonStringAt(text, textPos + textMarker.size() - 1, responseText))
+        return FailResponse(provider, model, "invalid anthropic text content");
+
+    return ParseAgentProviderResponse(responseText, provider, model);
 }
 
 RecordedTextAgentProvider::RecordedTextAgentProvider(
