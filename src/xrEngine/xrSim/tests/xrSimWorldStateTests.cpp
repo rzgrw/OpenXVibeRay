@@ -1,6 +1,7 @@
 #include "xrSim/xrSimAgentProvider.h"
 #include "xrSim/xrSimAnthropicTransport.h"
 #include "xrSim/xrSimActorIntent.h"
+#include "xrSim/xrSimActors.h"
 #include "xrSim/xrSimWorldState.h"
 #include "xrSim/xrSimBridge.h"
 #include "xrSim/xrSimNullAgent.h"
@@ -741,6 +742,45 @@ bool TestActorIntentParserRejectsBadVersionAsValue()
     return ok;
 }
 
+bool TestDebugSquadObservationIsExperiential()
+{
+    xrSim::WorldState state;
+    const xrSim::Handle region = state.CreateRegion("debug_region", 100);
+    const xrSim::Handle species = state.CreateSpecies("blind_dog");
+    xrSim::Result result = state.SetPopulation(region, species, 50);
+    bool ok = Expect(result.ok, "squad observation setup accepts population");
+
+    const xrSim::ActorAgentRecord squad = xrSim::MakeDebugSquadAgent();
+    const std::string observation = xrSim::BuildActorObservation(squad, state, "player_visible medium_range");
+
+    ok = Expect(observation.find("scope SQUAD") != std::string::npos, "squad observation records scope") && ok;
+    ok = Expect(observation.find("memory_summary") != std::string::npos, "squad observation records memory") && ok;
+    ok = Expect(observation.find("situation player_visible medium_range") != std::string::npos,
+        "squad observation records situation") && ok;
+    ok = Expect(observation.find("legal_tools move_to fire_pattern vocalize retreat author_memory") != std::string::npos,
+        "squad observation records legal tools") && ok;
+    ok = Expect(observation.find(state.Digest()) != std::string::npos, "squad observation includes world digest") && ok;
+    return ok;
+}
+
+bool TestDebugMutantPackObservationUsesPackTools()
+{
+    xrSim::WorldState state;
+    state.CreateRegion("debug_region", 100);
+    state.CreateSpecies("blind_dog");
+
+    const xrSim::ActorAgentRecord pack = xrSim::MakeDebugMutantPackAgent();
+    const std::string prompt = xrSim::BuildActorWakePrompt(pack, state, "heard_gunfire");
+
+    bool ok = Expect(prompt.find("xrsim_actor_wake_v1") == 0, "actor wake prompt has version");
+    ok = Expect(prompt.find("scope MUTANT_PACK") != std::string::npos, "mutant prompt records scope") && ok;
+    ok = Expect(prompt.find("legal_tools stalk ambush retreat author_memory") != std::string::npos,
+        "mutant prompt records pack legal tools") && ok;
+    ok = Expect(prompt.find("return xrsim_actor_intent_v1") != std::string::npos,
+        "mutant prompt requests actor intent response") && ok;
+    return ok;
+}
+
 bool TestNullAgentWakeAppliesDeterministicIntent()
 {
     xrSim::WorldState state;
@@ -923,6 +963,8 @@ int main()
     ok = TestActorIntentParserRejectsMixedCoastAndMetadataOrActions() && ok;
     ok = TestActorIntentParserRoundTripsFormat() && ok;
     ok = TestActorIntentParserRejectsBadVersionAsValue() && ok;
+    ok = TestDebugSquadObservationIsExperiential() && ok;
+    ok = TestDebugMutantPackObservationUsesPackTools() && ok;
     ok = TestNullAgentWakeAppliesDeterministicIntent() && ok;
     ok = TestBridgeDebugVerbs() && ok;
     ok = TestBridgeSnapshotVerbs() && ok;
