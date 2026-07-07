@@ -1,5 +1,37 @@
 add_library(xrEngine)
 
+add_library(xrSimCore STATIC
+    xrSim/xrSimBridge.cpp
+    xrSim/xrSimBridge.h
+    xrSim/xrSimWorldState.cpp
+    xrSim/xrSimWorldState.h
+)
+
+target_include_directories(xrSimCore
+    PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_SOURCE_DIR}/src"
+)
+
+set_target_properties(xrSimCore PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+)
+
+add_executable(xrSimWorldStateTests EXCLUDE_FROM_ALL
+    xrSim/tests/xrSimWorldStateTests.cpp
+)
+
+target_include_directories(xrSimWorldStateTests
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_SOURCE_DIR}/src"
+)
+
+target_link_libraries(xrSimWorldStateTests
+    PRIVATE
+    xrSimCore
+)
+
 target_sources_grouped(
     TARGET xrEngine
     NAME "editor"
@@ -422,6 +454,7 @@ target_link_libraries(xrEngine
     xrMiscMath
 
     PRIVATE
+    xrSimCore
     xrAPI
     xrCDB
     xrMaterialSystem

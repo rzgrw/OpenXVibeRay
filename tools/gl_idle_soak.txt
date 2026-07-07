@@ -1,0 +1,14 @@
+# GL idle soak: 60-second default wait for the first harness pass.
+hello
+state
+sleep 5
+cmd start server(1/single/alife/load) client(localhost)
+sleep 45
+key space tap
+sleep 2
+state
+sleep 60
+state
+shot gl_idle_final
+cmd flush
+cmd quit

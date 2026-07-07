@@ -1,0 +1,101 @@
+#include "xrSim/xrSimBridge.h"
+#include "xrSim/xrSimWorldState.h"
+
+#include <cstdio>
+
+namespace xrSim
+{
+namespace
+{
+WorldState g_debugWorld;
+uint32_t g_nextSeq = 1;
+bool g_initialized = false;
+
+void ResetDebugWorld()
+{
+    g_debugWorld = WorldState{};
+    const Handle region = g_debugWorld.CreateRegion("debug_region", 100);
+    const Handle species = g_debugWorld.CreateSpecies("blind_dog");
+    g_debugWorld.SetPopulation(region, species, 50);
+    g_nextSeq = 1;
+    g_initialized = true;
+}
+
+void EnsureDebugWorld()
+{
+    if (!g_initialized)
+        ResetDebugWorld();
+}
+
+std::string InjectIntent(const std::string& payload, bool& ok)
+{
+    char tool[64]{};
+    char regionName[64]{};
+    char speciesName[64]{};
+    int delta = 0;
+    if (4 != std::sscanf(payload.c_str(), "%63s %63s %63s %d", tool, regionName, speciesName, &delta))
+    {
+        ok = false;
+        return "usage: ai.inject adjust_population <region> <species> <delta>";
+    }
+
+    if (std::string(tool) != "adjust_population")
+    {
+        ok = false;
+        return std::string("unknown intent: ") + tool;
+    }
+
+    EnsureDebugWorld();
+    const Handle region = g_debugWorld.FindRegionByName(regionName);
+    if (!region.IsValid())
+    {
+        ok = false;
+        return std::string("unknown region: ") + regionName;
+    }
+
+    const Handle species = g_debugWorld.FindSpeciesByName(speciesName);
+    if (!species.IsValid())
+    {
+        ok = false;
+        return std::string("unknown species: ") + speciesName;
+    }
+
+    const Result result = g_debugWorld.ApplyAdjustPopulation(g_nextSeq++, region, species, delta, 0);
+    ok = result.ok;
+    if (!result.ok)
+        return result.reason;
+
+    return "accepted applied_delta=" + std::to_string(result.appliedDelta);
+}
+} // namespace
+
+std::string HandleBridgeVerb(const std::string& verb, const std::string& payload, bool& ok)
+{
+    if (verb == "ai.reset")
+    {
+        ResetDebugWorld();
+        ok = true;
+        return "xrsim reset";
+    }
+
+    if (verb == "ai.status")
+    {
+        ok = true;
+        return std::string("xrsim initialized=") + (g_initialized ? "1" : "0") +
+            " log=" + std::to_string(g_debugWorld.ToolLog().size());
+    }
+
+    if (verb == "ai.observe")
+    {
+        EnsureDebugWorld();
+        ok = true;
+        return g_debugWorld.Digest();
+    }
+
+    if (verb == "ai.inject")
+        return InjectIntent(payload, ok);
+
+    ok = false;
+    return "unknown ai verb: " + verb;
+}
+} // namespace xrSim

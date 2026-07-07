@@ -81,6 +81,19 @@ python3 /Users/rz/OpenXVibeRay/tools/agentctl.py "$SOCK" cmd 'flush'    # force 
 Verbs: `hello/cmd/lua/key/mouse/state/shot/bye`. The soak regression gate: `tools/agentctl.py <sock> --script tools/bridge_soak.txt`.
 Log: `appdata/logs/openxray_radik zagirov.log` (truncate before a run to isolate output).
 
+### 3.5 GL stability gate
+
+Before AI work, keep `renderer_r3` green with the GL macOS soak wrapper:
+
+```bash
+python3 /Users/rz/OpenXVibeRay/tools/gl_macos_soak.py \
+  --scenario /Users/rz/OpenXVibeRay/tools/gl_load_play_save_load.txt \
+  --repeat 5 \
+  --artifacts /Users/rz/OpenXVibeRay/artifacts/gl_macos_soak/repeat_5
+```
+
+This launches the game from the CoC run directory, drives the bridge, samples FPS/frame progress and RSS, validates screenshots/logs/exit, and writes `summary.json` plus `report.txt`.
+
 ### 3.4 Two gotchas that will waste your time
 - **Do NOT use `-nosound`.** It crashes CoC's `sound_theme.script` (`nil played_id`). To silence audio, set in `appdata/user.ltx` (while the game is stopped): `snd_volume_eff 0.` and `snd_volume_music 0.` — keeps the sound subsystem alive so scripts work.
 - **Renderer select** is `renderer` in `appdata/user.ltx`: `renderer_r3` = GL (**current default**), `renderer_metal` = Metal. Change while the game is stopped.
@@ -121,12 +134,31 @@ The running game loads GLSL from a **copy** at `<CoC gamedata>/shaders/gl/`, **n
 The next phase is the **agentic Zone** (`xrMind` / `xrSim`). Read the spec first: [`docs/superpowers/specs/2026-07-05-agentic-zone-design.md`](superpowers/specs/2026-07-05-agentic-zone-design.md).
 
 Shape of it (per the spec and the design decisions in project memory):
-- The Zone is **simulated by LLM agents** (persistent `WorldAgents`) that own world evolution. C++ is a thin `xrSim` state store + a near-player executor + materialization back into the engine.
+- The Zone is **simulated by LLM agents** (persistent `WorldAgents`) that own world evolution. This is a **complete simulation rewrite**, not a sidecar: legacy ALife becomes the compatibility/materialization surface while `xrMind` + `xrSim` take over world authority.
 - **Cloud-first, thin offline.** Move the bulk of compute to LLMs (Anthropic/OpenAI) — the local machine's resources are reserved for the renderer/engine, not a load-bearing local model.
+- Future provider-backed in-game AI tests should default to the **Sonnet-tier model** (currently documented as `claude-sonnet-5`) before any Opus-quality pass. Keep deterministic-null/replay tests as the CI floor; use Sonnet to measure realistic in-game behavior, cost, RPM pressure, and crash safety.
 - Honest trade-offs the spec commits to: weaker determinism (replay via recorded tool-calls), effectively online, ~\$3–8/wall-hr.
 - Invariants that carry over from the engine work: **stable IDs never regenerated**, **two-phase validation / no-THROW** (see §2), materialization contract.
 
 Because GL already runs the full game, the AI work does **not** need the renderer rewrite — build against the GL runtime and the agent bridge (§3) as the verification harness.
+
+### 5.1 xrSim foundation checkpoint
+
+The first AI substrate is on `codex/ai-zone-foundation`: `src/xrEngine/xrSim/` contains a deterministic coarse `WorldState`, stable index+generation handles, clamped `adjust_population`, and an append-only tool log. It is intentionally provider-free: this is the replayable C++ substrate the LLM layer will drive later.
+
+Debug bridge verbs are available in `-agent_bridge` sessions:
+
+```bash
+python3 tools/agentctl.py <sock> ai.reset
+python3 tools/agentctl.py <sock> ai.observe
+python3 tools/agentctl.py <sock> ai.inject adjust_population debug_region blind_dog 500
+```
+
+Smoke script:
+
+```bash
+python3 tools/gl_macos_soak.py --scenario tools/ai_zone_smoke.txt --artifacts artifacts/ai_zone_smoke
+```
 
 ---
 

@@ -1,0 +1,59 @@
+# GL stability gate: load, move/look, save/load, inventory, quit.
+hello
+state
+sleep 5
+cmd start server(1/single/alife/load) client(localhost)
+sleep 45
+key space tap
+sleep 2
+state
+key w down
+sleep 2
+key w up
+key s down
+sleep 1
+key s up
+key a down
+sleep 1
+key a up
+key d down
+sleep 1
+key d up
+state
+mouse move 200 0
+sleep 1
+mouse move 200 0
+sleep 1
+mouse move -400 50
+sleep 1
+state
+shot gl_soak_look
+key x down
+key w down
+sleep 2
+key w up
+key x up
+key space tap
+sleep 1
+key c tap
+sleep 1
+key c tap
+state
+cmd save soaktest
+sleep 3
+cmd load soaktest
+sleep 40
+key space tap
+sleep 2
+state
+lua db.actor:position().x .. "," .. db.actor:position().z
+shot gl_soak_after_reload
+sleep 2
+key i tap
+sleep 1
+shot gl_soak_inventory
+key escape tap
+sleep 1
+state
+cmd flush
+cmd quit
