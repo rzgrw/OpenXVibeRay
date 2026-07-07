@@ -21,6 +21,12 @@ Result NullAgentRuntime::Wake(WorldState& state, uint32_t gameDay)
         return Result{ false, 0, reason };
     }
 
+    if (m_lastProviderResult.coast)
+    {
+        ++m_wakeCount;
+        return Result{ true, 0, "coast" };
+    }
+
     if (m_lastProviderResult.intents.empty())
         return Result{ false, 0, "agent provider returned no intents" };
 

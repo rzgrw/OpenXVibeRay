@@ -25,6 +25,7 @@ struct AgentWakeContext
 struct AgentProviderResult
 {
     bool ok = false;
+    bool coast = false;
     std::string provider;
     std::string model;
     std::string error;

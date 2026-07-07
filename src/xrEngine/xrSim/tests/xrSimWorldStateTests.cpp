@@ -246,6 +246,7 @@ bool TestAgentPromptIncludesObservationAndToolSchema()
     ok = Expect(prompt.find(context.observation) != std::string::npos, "agent prompt includes observation") && ok;
     ok = Expect(prompt.find("intent adjust_population <region> <species> <delta:int>") != std::string::npos,
         "agent prompt includes tool schema") && ok;
+    ok = Expect(prompt.find("coast") != std::string::npos, "agent prompt allows coast response") && ok;
     return ok;
 }
 
@@ -286,6 +287,21 @@ bool TestAgentResponseParserRejectsUnknownIntentAsValue()
     return ok;
 }
 
+bool TestAgentResponseParserAcceptsCoastAsNormalValue()
+{
+    const char* response =
+        "xrsim_agent_response_v1\n"
+        "coast\n"
+        "end\n";
+
+    const xrSim::AgentProviderResult result =
+        xrSim::ParseAgentProviderResponse(response, "anthropic", "claude-sonnet-5");
+    bool ok = Expect(result.ok, "agent response parser accepts coast as normal value");
+    ok = Expect(result.coast, "agent response parser marks coast") && ok;
+    ok = Expect(result.intents.empty(), "agent response coast emits no intents") && ok;
+    return ok;
+}
+
 bool TestRecordedTextProviderParsesScriptedWake()
 {
     std::vector<std::string> script;
@@ -305,6 +321,36 @@ bool TestRecordedTextProviderParsesScriptedWake()
     ok = Expect(result.intents.size() == 1, "recorded text provider emits scripted intent") && ok;
     if (result.intents.size() == 1)
         ok = Expect(result.intents[0].delta == 6, "recorded text provider preserves scripted delta") && ok;
+    return ok;
+}
+
+bool TestRuntimeCoastsOnProviderCoastResult()
+{
+    xrSim::WorldState state;
+    const xrSim::Handle region = state.CreateRegion("debug_region", 100);
+    const xrSim::Handle species = state.CreateSpecies("blind_dog");
+    xrSim::Result result = state.SetPopulation(region, species, 50);
+    bool ok = Expect(result.ok, "coast provider setup accepts population");
+
+    xrSim::AgentProviderResult wake;
+    wake.ok = true;
+    wake.provider = "recorded";
+    wake.model = "fixture";
+    wake.coast = true;
+
+    std::vector<xrSim::AgentProviderResult> script;
+    script.push_back(wake);
+    xrSim::RecordedAgentProvider provider(script);
+    xrSim::NullAgentRuntime runtime;
+    runtime.SetProvider(&provider);
+
+    result = runtime.Wake(state, 12);
+    ok = Expect(result.ok, "runtime accepts provider coast") && ok;
+    ok = Expect(result.appliedDelta == 0, "runtime coast applies no delta") && ok;
+    ok = Expect(result.reason == "coast", "runtime coast reports coast reason") && ok;
+    ok = Expect(state.Population(region, species) == 50, "runtime coast leaves population unchanged") && ok;
+    ok = Expect(state.ToolLog().empty(), "runtime coast records no tool call") && ok;
+    ok = Expect(runtime.WakeCount() == 1, "runtime coast counts as completed wake") && ok;
     return ok;
 }
 
@@ -465,7 +511,9 @@ int main()
     ok = TestAgentPromptIncludesObservationAndToolSchema() && ok;
     ok = TestAgentResponseParserAcceptsIntentLines() && ok;
     ok = TestAgentResponseParserRejectsUnknownIntentAsValue() && ok;
+    ok = TestAgentResponseParserAcceptsCoastAsNormalValue() && ok;
     ok = TestRecordedTextProviderParsesScriptedWake() && ok;
+    ok = TestRuntimeCoastsOnProviderCoastResult() && ok;
     ok = TestNullAgentWakeAppliesDeterministicIntent() && ok;
     ok = TestBridgeDebugVerbs() && ok;
     ok = TestBridgeSnapshotVerbs() && ok;

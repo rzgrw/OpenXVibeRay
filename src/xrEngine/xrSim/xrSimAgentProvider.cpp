@@ -86,7 +86,7 @@ std::string BuildAgentWakePrompt(const AgentWakeContext& context)
     out << "tools\n";
     out << "intent adjust_population <region> <species> <delta:int>\n";
     out << "rules\n";
-    out << "return xrsim_agent_response_v1 with intent lines only\n";
+    out << "return xrsim_agent_response_v1 with intent lines, or coast if no strategic change is needed\n";
     out << "never emit per-frame or near-player tactical decisions\n";
     out << "end\n";
     return out.str();
@@ -115,6 +115,13 @@ AgentProviderResult ParseAgentProviderResponse(
             sawEnd = true;
             break;
         }
+        if (line == "coast")
+        {
+            if (!result.intents.empty())
+                return FailResponse(provider, model, "coast cannot be mixed with intents");
+            result.coast = true;
+            continue;
+        }
 
         std::istringstream record(line);
         std::string recordType;
@@ -129,6 +136,8 @@ AgentProviderResult ParseAgentProviderResponse(
             return FailResponse(provider, model, "invalid agent response record");
         if (recordType != "intent")
             return FailResponse(provider, model, "invalid agent response record");
+        if (result.coast)
+            return FailResponse(provider, model, "coast cannot be mixed with intents");
         if (tool != "adjust_population")
             return FailResponse(provider, model, "unknown intent: " + tool);
 
@@ -146,7 +155,7 @@ AgentProviderResult ParseAgentProviderResponse(
 
     if (!sawEnd)
         return FailResponse(provider, model, "missing agent response end");
-    if (result.intents.empty())
+    if (result.intents.empty() && !result.coast)
         return FailResponse(provider, model, "agent response contained no intents");
 
     return result;
