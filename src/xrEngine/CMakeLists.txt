@@ -10,6 +10,8 @@ add_library(xrSimCore STATIC
     xrSim/xrSimActuator.h
     xrSim/xrSimActorIntent.cpp
     xrSim/xrSimActorIntent.h
+    xrSim/xrSimActorRuntime.cpp
+    xrSim/xrSimActorRuntime.h
     xrSim/xrSimActors.cpp
     xrSim/xrSimActors.h
     xrSim/xrSimAgentProvider.cpp

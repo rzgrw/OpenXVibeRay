@@ -2,6 +2,7 @@
 #include "xrSim/xrSimAnthropicTransport.h"
 #include "xrSim/xrSimActuator.h"
 #include "xrSim/xrSimActorIntent.h"
+#include "xrSim/xrSimActorRuntime.h"
 #include "xrSim/xrSimActors.h"
 #include "xrSim/xrSimWorldState.h"
 #include "xrSim/xrSimBridge.h"
@@ -919,6 +920,60 @@ bool TestActorObservationSanitizesInjectedControlLines()
     return ok;
 }
 
+bool TestActorRuntimeWakesDebugSquad()
+{
+    xrSim::WorldState state;
+    state.CreateRegion("debug_region", 100);
+    state.CreateSpecies("blind_dog");
+
+    xrSim::ActorAgentRecord squad = xrSim::MakeDebugSquadAgent();
+    xrSim::DeterministicActorIntentProvider provider;
+    xrSim::ActorRuntime runtime;
+    runtime.SetProvider(&provider);
+
+    const xrSim::ActuatorResult result = runtime.Wake(state, squad, "player_visible medium_range", 1);
+
+    bool ok = Expect(result.ok, "actor runtime wakes debug squad");
+    ok = Expect(runtime.WakeCount() == 1, "actor runtime records wake count") && ok;
+    ok = Expect(runtime.LastCommands().size() >= 2, "actor runtime stores actuator commands") && ok;
+    ok = Expect(squad.lastIntent.goal == "survive_and_delay_player", "actor runtime stores last squad intent") && ok;
+    return ok;
+}
+
+bool TestActorRuntimeWakesDebugMutantPack()
+{
+    xrSim::WorldState state;
+    const xrSim::Handle region = state.CreateRegion("debug_region", 100);
+    const xrSim::Handle species = state.CreateSpecies("blind_dog");
+    xrSim::Result setup = state.SetPopulation(region, species, 50);
+    bool ok = Expect(setup.ok, "mutant runtime setup accepts population");
+
+    xrSim::ActorAgentRecord pack = xrSim::MakeDebugMutantPackAgent();
+    xrSim::DeterministicActorIntentProvider provider;
+    xrSim::ActorRuntime runtime;
+    runtime.SetProvider(&provider);
+
+    const xrSim::ActuatorResult result = runtime.Wake(state, pack, "heard_gunfire", 1);
+
+    ok = Expect(result.ok, "actor runtime wakes debug mutant pack") && ok;
+    ok = Expect(pack.lastIntent.goal == "feed_without_losing_alpha", "actor runtime stores pack goal") && ok;
+    ok = Expect(runtime.LastCommands().size() >= 1, "actor runtime stores pack commands") && ok;
+    return ok;
+}
+
+bool TestRecordedActorProviderExhaustionFailsAsValue()
+{
+    std::vector<std::string> script;
+    xrSim::RecordedActorIntentProvider provider(script);
+    xrSim::ActorWakeContext context;
+    context.actor = xrSim::MakeDebugSquadAgent();
+
+    const xrSim::ActorProviderResult result = provider.Wake(context);
+    bool ok = Expect(!result.ok, "recorded actor provider exhaustion fails as value");
+    ok = Expect(result.error.find("exhausted") != std::string::npos, "recorded actor provider explains exhaustion") && ok;
+    return ok;
+}
+
 bool TestNullAgentWakeAppliesDeterministicIntent()
 {
     xrSim::WorldState state;
@@ -1108,6 +1163,9 @@ int main()
     ok = TestDebugSquadObservationIsExperiential() && ok;
     ok = TestDebugMutantPackObservationUsesPackTools() && ok;
     ok = TestActorObservationSanitizesInjectedControlLines() && ok;
+    ok = TestActorRuntimeWakesDebugSquad() && ok;
+    ok = TestActorRuntimeWakesDebugMutantPack() && ok;
+    ok = TestRecordedActorProviderExhaustionFailsAsValue() && ok;
     ok = TestNullAgentWakeAppliesDeterministicIntent() && ok;
     ok = TestBridgeDebugVerbs() && ok;
     ok = TestBridgeSnapshotVerbs() && ok;
