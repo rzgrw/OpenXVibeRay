@@ -15,6 +15,8 @@
 - Stable IDs are never regenerated; handles use index plus generation.
 - LLM/provider calls are out of scope for this slice; deterministic-null and bridge-visible state come first.
 - No live ALife behavior changes are part of this slice; xrSim state is debug-controlled until materialization work begins.
+- The AI initiative is a complete simulation rewrite; legacy ALife should be treated as the compatibility/materialization layer, not the target authority.
+- Future provider-backed in-game AI tests default to Sonnet-tier (`claude-sonnet-5` in the current spec) after deterministic-null replay gates pass.
 
 ---
 

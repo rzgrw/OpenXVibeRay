@@ -134,8 +134,9 @@ The running game loads GLSL from a **copy** at `<CoC gamedata>/shaders/gl/`, **n
 The next phase is the **agentic Zone** (`xrMind` / `xrSim`). Read the spec first: [`docs/superpowers/specs/2026-07-05-agentic-zone-design.md`](superpowers/specs/2026-07-05-agentic-zone-design.md).
 
 Shape of it (per the spec and the design decisions in project memory):
-- The Zone is **simulated by LLM agents** (persistent `WorldAgents`) that own world evolution. C++ is a thin `xrSim` state store + a near-player executor + materialization back into the engine.
+- The Zone is **simulated by LLM agents** (persistent `WorldAgents`) that own world evolution. This is a **complete simulation rewrite**, not a sidecar: legacy ALife becomes the compatibility/materialization surface while `xrMind` + `xrSim` take over world authority.
 - **Cloud-first, thin offline.** Move the bulk of compute to LLMs (Anthropic/OpenAI) — the local machine's resources are reserved for the renderer/engine, not a load-bearing local model.
+- Future provider-backed in-game AI tests should default to the **Sonnet-tier model** (currently documented as `claude-sonnet-5`) before any Opus-quality pass. Keep deterministic-null/replay tests as the CI floor; use Sonnet to measure realistic in-game behavior, cost, RPM pressure, and crash safety.
 - Honest trade-offs the spec commits to: weaker determinism (replay via recorded tool-calls), effectively online, ~\$3–8/wall-hr.
 - Invariants that carry over from the engine work: **stable IDs never regenerated**, **two-phase validation / no-THROW** (see §2), materialization contract.
 
