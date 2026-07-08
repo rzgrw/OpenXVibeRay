@@ -8,12 +8,15 @@ CAgentBridge* g_agent_bridge = nullptr;
 #include "XR_IOConsole.h"
 #include "IGame_Level.h"
 #include "xrSim/xrSimBridge.h"
+#include "xrSim/xrSimPackSpawn.h"
 #include "xrScriptEngine/script_engine.hpp"
 #include <lua.hpp>
 
 #include <SDL.h>
+#include <sstream>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <vector>
 #include <poll.h>
 #include <unistd.h>
 
@@ -246,6 +249,7 @@ void CAgentBridge::HandleRequest(const std::string& line)
     else if (verb == "mouse") result = VerbMouse(payload, ok);
     else if (verb == "state") result = VerbState(ok);
     else if (verb == "shot")  result = VerbShot(payload, ok);
+    else if (verb == "agent.pack.spawn") result = VerbAgentPackSpawn(payload, ok);
     else if (verb.rfind("ai.", 0) == 0 || verb.rfind("agent.", 0) == 0)
         result = xrSim::HandleBridgeVerb(verb, payload, ok);
     else { ok = false; result = "unknown verb: " + verb; }
@@ -493,6 +497,67 @@ std::string CAgentBridge::VerbShot(const std::string& payload, bool& ok)
     if (!GEnv.Render)    { ok = false; return "renderer not ready"; }
     GEnv.Render->Screenshot(IRender::SM_NORMAL, payload.c_str());
     return payload;
+}
+
+namespace
+{
+    std::string format_spawned_ids(const std::vector<u16>& ids)
+    {
+        std::ostringstream out;
+        for (size_t i = 0; i < ids.size(); ++i)
+        {
+            if (i != 0)
+                out << ",";
+            out << ids[i];
+        }
+        return out.str();
+    }
+} // namespace
+
+std::string CAgentBridge::VerbAgentPackSpawn(const std::string& payload, bool& ok)
+{
+    const xrSim::PackSpawnParseResult parsed = xrSim::ParsePackSpawnPayload(payload);
+    if (!parsed.ok)
+    {
+        ok = false;
+        return parsed.reason;
+    }
+
+    if (!g_pGameLevel || !g_pGameLevel->bReady)
+    {
+        ok = false;
+        return "game level not ready";
+    }
+
+    std::vector<u16> ids;
+    ids.reserve(parsed.request.count);
+    for (u32 i = 0; i < parsed.request.count; ++i)
+    {
+        u16 id = u16(-1);
+        xr_string reason;
+        if (!g_pGameLevel->AgentBridgeSpawnObjectNearCurrentEntity(
+                parsed.request.section.c_str(), i, parsed.request.count, float(parsed.request.radiusMeters), id, reason))
+        {
+            ok = false;
+            std::ostringstream out;
+            out << "spawn failed after ids=" << format_spawned_ids(ids) << " reason=" << reason.c_str();
+            return out.str();
+        }
+        ids.push_back(id);
+    }
+
+    std::ostringstream registration;
+    registration << parsed.request.section;
+    for (const u16 id : ids)
+        registration << " " << id;
+
+    bool registerOk = false;
+    const std::string registered = xrSim::HandleBridgeVerb("agent.pack.register", registration.str(), registerOk);
+    ok = registerOk;
+    if (!registerOk)
+        return registered;
+
+    return "spawned " + registered + " ids=" + format_spawned_ids(ids);
 }
 
 #else // XR_PLATFORM_WINDOWS

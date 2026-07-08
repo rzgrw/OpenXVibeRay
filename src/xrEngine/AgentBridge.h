@@ -37,6 +37,7 @@ private:
     std::string VerbMouse(const std::string& payload, bool& ok);
     std::string VerbState(bool& ok);
     std::string VerbShot(const std::string& payload, bool& ok);
+    std::string VerbAgentPackSpawn(const std::string& payload, bool& ok);
 
     string_path m_socketPath;
     int m_listenFd = -1;

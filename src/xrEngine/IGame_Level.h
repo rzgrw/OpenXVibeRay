@@ -150,6 +150,18 @@ public:
 
     [[nodiscard]]
     virtual float GetEnvironmentGameDayTimeSec() const = 0;
+
+    virtual bool AgentBridgeSpawnObjectNearCurrentEntity(
+        pcstr section, u32 ordinal, u32 count, float radius, u16& id, xr_string& reason)
+    {
+        (void)section;
+        (void)ordinal;
+        (void)count;
+        (void)radius;
+        id = u16(-1);
+        reason = "agent bridge spawn unavailable";
+        return false;
+    }
 };
 
 //-----------------------------------------------------------------------------------------------------------

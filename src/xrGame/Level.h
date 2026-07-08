@@ -339,6 +339,8 @@ public:
     void Send(NET_Packet& P, u32 dwFlags = 0x0008 /*DPNSEND_GUARANTEED*/, u32 dwTimeout = 0) override;
     void g_cl_Spawn(LPCSTR name, u8 rp, u16 flags, Fvector pos); // only ask server
     void g_sv_Spawn(CSE_Abstract* E); // server reply/command spawning
+    bool AgentBridgeSpawnObjectNearCurrentEntity(
+        pcstr section, u32 ordinal, u32 count, float radius, u16& id, xr_string& reason) override;
 
     // Save/Load/State
     void SLS_Load(LPCSTR name); // Game Load

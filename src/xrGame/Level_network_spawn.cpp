@@ -78,6 +78,122 @@ void CLevel::g_cl_Spawn(LPCSTR name, u8 rp, u16 flags, Fvector pos)
     F_entity_Destroy(E);
 }
 
+bool CLevel::AgentBridgeSpawnObjectNearCurrentEntity(
+    pcstr section, u32 ordinal, u32 count, float radius, u16& id, xr_string& reason)
+{
+    id = u16(-1);
+
+    if (!section || !pSettings || !pSettings->section_exist(section))
+    {
+        reason = "invalid section: ";
+        reason += section ? section : "<null>";
+        return false;
+    }
+
+    if (!pSettings->line_exist(section, "class"))
+    {
+        reason = "spawn section has no class: ";
+        reason += section;
+        return false;
+    }
+
+    if (!CurrentEntity())
+    {
+        reason = "current entity unavailable";
+        return false;
+    }
+
+    if (!Server)
+    {
+        reason = "server unavailable";
+        return false;
+    }
+
+    if (!ai().get_level_graph())
+    {
+        reason = "level graph unavailable";
+        return false;
+    }
+
+    const Fvector actorPosition = CurrentEntity()->Position();
+    if (!ai().level_graph().valid_vertex_position(actorPosition))
+    {
+        reason = "current entity is outside the level graph";
+        return false;
+    }
+
+    const u32 actorVertex = ai().level_graph().vertex_id(actorPosition);
+    if (!ai().level_graph().valid_vertex_id(actorVertex))
+    {
+        reason = "current entity has invalid level vertex";
+        return false;
+    }
+
+    const float angle = 6.28318530718f * float(ordinal) / float(count ? count : 1);
+    Fvector desiredPosition = actorPosition;
+    desiredPosition.x += _cos(angle) * radius;
+    desiredPosition.z += _sin(angle) * radius;
+
+    const u32 spawnVertex = ai().level_graph().vertex(actorVertex, desiredPosition);
+
+    if (!ai().level_graph().valid_vertex_id(spawnVertex))
+    {
+        reason = "no valid nearby level vertex";
+        return false;
+    }
+
+    const Fvector spawnPosition = ai().level_graph().vertex_position(spawnVertex);
+    CSE_Abstract* temporary = F_entity_Create(section, true);
+    if (!temporary)
+    {
+        reason = "spawn object class is not registered";
+        return false;
+    }
+
+    CSE_ALifeDynamicObject* dynamicObject = smart_cast<CSE_ALifeDynamicObject*>(temporary);
+    if (dynamicObject && ai().get_level_graph())
+    {
+        dynamicObject->m_tNodeID = spawnVertex;
+        if (ai().get_game_graph() && ai().get_cross_table())
+            dynamicObject->m_tGraphID = ai().cross_table().vertex(spawnVertex).game_vertex_id();
+    }
+
+    temporary->s_name = section;
+    temporary->set_name_replace(section);
+    temporary->o_Position = spawnPosition;
+    temporary->s_RP = 0xff;
+    temporary->ID = 0xffff;
+    temporary->ID_Parent = 0xffff;
+    temporary->ID_Phantom = 0xffff;
+    temporary->s_flags.assign(M_SPAWN_OBJECT_LOCAL);
+    temporary->RespawnTime = 0;
+
+    NET_Packet packet;
+    temporary->Spawn_Write(packet, TRUE);
+    F_entity_Destroy(temporary);
+
+    ClientID clientID;
+    clientID.set(0xffff);
+
+    u16 message = 0;
+    packet.r_begin(message);
+    if (message != M_SPAWN)
+    {
+        reason = "spawn packet was not M_SPAWN";
+        return false;
+    }
+
+    CSE_Abstract* spawned = Server->Process_spawn(packet, clientID);
+    if (!spawned)
+    {
+        reason = "server spawn failed";
+        return false;
+    }
+
+    id = spawned->ID;
+    return true;
+}
+
 #ifdef DEBUG
 extern Flags32 psAI_Flags;
 extern float debug_on_frame_gather_stats_frequency;
