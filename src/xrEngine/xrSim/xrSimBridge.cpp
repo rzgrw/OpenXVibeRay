@@ -223,6 +223,8 @@ std::string RegisterPackFromPayload(const std::string& payload, bool& ok)
         return "missing pack members";
     }
 
+    EnsureDebugWorld();
+
     registration.spawnReason = "session_spawn";
     const PackRegisterResult result = RegisterSessionMutantPack(registration);
     ok = result.ok;

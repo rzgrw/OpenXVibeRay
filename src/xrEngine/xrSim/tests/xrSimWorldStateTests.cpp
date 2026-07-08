@@ -1556,6 +1556,21 @@ bool TestPackBridgeVerbsRegisterObserveWake()
     ok = Expect(out != "empty", "agent.pack.commands reports commands") && ok;
     return ok;
 }
+
+bool TestPackBridgeRegisterInitializesBeforeSessionPack()
+{
+    bool verbOk = false;
+    std::string out = xrSim::HandleBridgeVerb("agent.pack.register", "dog_weak 2010 2011 2012", verbOk);
+    bool ok = Expect(verbOk, "agent.pack.register succeeds before explicit ai.reset");
+    ok = Expect(out.find("PACK#1") != std::string::npos, "first register before reset reports pack id") && ok;
+
+    out = xrSim::HandleBridgeVerb("agent.pack.observe", "1", verbOk);
+    ok = Expect(verbOk, "agent.pack.observe keeps first registered pack after debug world init") && ok;
+    ok = Expect(out.find("members=3") != std::string::npos, "first registered pack remains observable") && ok;
+
+    xrSim::HandleBridgeVerb("ai.reset", "", verbOk);
+    return ok && Expect(verbOk, "pack bridge no-reset regression cleanup succeeds");
+}
 } // namespace
 
 int main()
@@ -1613,6 +1628,7 @@ int main()
     ok = TestActorRuntimePreservesLastIntentWhenExecutionFails() && ok;
     ok = TestActorRuntimeCoastPreservesPriorEmbodiedIntent() && ok;
     ok = TestNullAgentWakeAppliesDeterministicIntent() && ok;
+    ok = TestPackBridgeRegisterInitializesBeforeSessionPack() && ok;
     ok = TestBridgeDebugVerbs() && ok;
     ok = TestBridgeSnapshotVerbs() && ok;
     ok = TestBridgeReplayVerb() && ok;
