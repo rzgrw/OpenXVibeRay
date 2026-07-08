@@ -3,6 +3,7 @@
 #include "xrSim/xrSimAnthropicTransport.h"
 #include "xrSim/xrSimActorRuntime.h"
 #include "xrSim/xrSimNullAgent.h"
+#include "xrSim/xrSimPackSpawn.h"
 #include "xrSim/xrSimWorldState.h"
 
 #include <cstdio>
@@ -33,6 +34,7 @@ void ResetDebugWorld()
     g_debugWorld.SetPopulation(region, species, 50);
     g_nextSeq = 1;
     g_initialized = true;
+    ResetSessionPacks();
 }
 
 void EnsureDebugWorld()
@@ -186,6 +188,93 @@ std::string WakeDebugActor(const std::string& payload, bool& ok)
         " goal=" + actor->lastIntent.goal + " commands=" + std::to_string(result.commands.size()) +
         " applied_delta=" + std::to_string(result.appliedDelta);
 }
+
+bool ParsePackId(const std::string& payload, uint32_t& packId)
+{
+    std::istringstream in(payload);
+    std::string trailing;
+    return bool(in >> packId) && !(in >> trailing);
+}
+
+std::string RegisterPackFromPayload(const std::string& payload, bool& ok)
+{
+    std::istringstream in(payload);
+    PackRegistration registration;
+    if (!(in >> registration.section))
+    {
+        ok = false;
+        return "usage: agent.pack.register <section> <id> [id...]";
+    }
+
+    uint32_t rawId = 0;
+    while (in >> rawId)
+    {
+        if (rawId > UINT16_MAX)
+        {
+            ok = false;
+            return "object id out of range: " + std::to_string(rawId);
+        }
+        registration.objectIds.push_back(uint16_t(rawId));
+    }
+
+    if (registration.objectIds.empty())
+    {
+        ok = false;
+        return "missing pack members";
+    }
+
+    registration.spawnReason = "session_spawn";
+    const PackRegisterResult result = RegisterSessionMutantPack(registration);
+    ok = result.ok;
+    if (!result.ok)
+        return result.reason;
+
+    std::ostringstream out;
+    out << "PACK#" << result.packId << " " << FormatPackList();
+    return out.str();
+}
+
+std::string ObserveRegisteredPack(const std::string& payload, bool& ok)
+{
+    uint32_t packId = 0;
+    if (!ParsePackId(payload, packId))
+    {
+        ok = false;
+        return "usage: agent.pack.observe <pack_id>";
+    }
+
+    EnsureDebugWorld();
+    std::string observation = ObservePack(packId, g_debugWorld);
+    if (observation.rfind("unknown pack:", 0) == 0)
+    {
+        ok = false;
+        return observation;
+    }
+    ok = true;
+    return observation;
+}
+
+std::string WakeRegisteredPack(const std::string& payload, bool& ok)
+{
+    uint32_t packId = 0;
+    if (!ParsePackId(payload, packId))
+    {
+        ok = false;
+        return "usage: agent.pack.wake <pack_id>";
+    }
+
+    EnsureDebugWorld();
+    const ActuatorResult result = WakePack(packId, g_debugWorld, g_actorRuntime, 0);
+    ok = result.ok;
+    if (!result.ok)
+        return result.reason;
+
+    const ActorProviderResult& provider = g_actorRuntime.LastProviderResult();
+    std::ostringstream out;
+    out << "pack wake id=" << packId << " goal=" << provider.plan.goal << " commands=" << result.commands.size()
+        << " applied_delta=" << result.appliedDelta;
+    return out.str();
+}
 } // namespace
 
 std::string HandleBridgeVerb(const std::string& verb, const std::string& payload, bool& ok)
@@ -316,6 +405,28 @@ std::string HandleBridgeVerb(const std::string& verb, const std::string& payload
         return WakeDebugActor(payload, ok);
 
     if (verb == "agent.actor.commands")
+    {
+        EnsureDebugWorld();
+        ok = true;
+        return FormatActuatorCommands(g_actorRuntime.LastCommands());
+    }
+
+    if (verb == "agent.pack.register")
+        return RegisterPackFromPayload(payload, ok);
+
+    if (verb == "agent.pack.list")
+    {
+        ok = true;
+        return FormatPackList();
+    }
+
+    if (verb == "agent.pack.observe")
+        return ObserveRegisteredPack(payload, ok);
+
+    if (verb == "agent.pack.wake")
+        return WakeRegisteredPack(payload, ok);
+
+    if (verb == "agent.pack.commands")
     {
         EnsureDebugWorld();
         ok = true;

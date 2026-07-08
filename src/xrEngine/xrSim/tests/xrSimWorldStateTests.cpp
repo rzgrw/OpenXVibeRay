@@ -1527,6 +1527,35 @@ bool TestSessionPackWakeUsesMutantPackIntent()
     ok = Expect(!wake.commands.empty(), "pack wake emits actuator commands") && ok;
     return ok;
 }
+
+bool TestPackBridgeVerbsRegisterObserveWake()
+{
+    bool verbOk = false;
+    std::string out = xrSim::HandleBridgeVerb("ai.reset", "", verbOk);
+    bool ok = Expect(verbOk, "pack bridge reset succeeds");
+
+    out = xrSim::HandleBridgeVerb("agent.pack.register", "dog_weak 1010 1011 1012", verbOk);
+    ok = Expect(verbOk, "agent.pack.register succeeds") && ok;
+    ok = Expect(out.find("PACK#1") != std::string::npos, "agent.pack.register reports pack id") && ok;
+
+    out = xrSim::HandleBridgeVerb("agent.pack.list", "", verbOk);
+    ok = Expect(verbOk, "agent.pack.list succeeds") && ok;
+    ok = Expect(out.find("members=3") != std::string::npos, "agent.pack.list reports members") && ok;
+
+    out = xrSim::HandleBridgeVerb("agent.pack.observe", "1", verbOk);
+    ok = Expect(verbOk, "agent.pack.observe succeeds") && ok;
+    ok = Expect(out.find("scope MUTANT_PACK") != std::string::npos, "agent.pack.observe reports mutant scope") && ok;
+    ok = Expect(out.find("members=3") != std::string::npos, "agent.pack.observe reports members") && ok;
+
+    out = xrSim::HandleBridgeVerb("agent.pack.wake", "1", verbOk);
+    ok = Expect(verbOk, "agent.pack.wake succeeds") && ok;
+    ok = Expect(out.find("goal=feed_without_losing_alpha") != std::string::npos, "agent.pack.wake reports goal") && ok;
+
+    out = xrSim::HandleBridgeVerb("agent.pack.commands", "", verbOk);
+    ok = Expect(verbOk, "agent.pack.commands succeeds") && ok;
+    ok = Expect(out != "empty", "agent.pack.commands reports commands") && ok;
+    return ok;
+}
 } // namespace
 
 int main()
@@ -1595,5 +1624,6 @@ int main()
     ok = TestPackSpawnPayloadParserRejectsUnsafeValues() && ok;
     ok = TestSessionPackRegistryRegistersIdsAndObserves() && ok;
     ok = TestSessionPackWakeUsesMutantPackIntent() && ok;
+    ok = TestPackBridgeVerbsRegisterObserveWake() && ok;
     return ok ? 0 : 1;
 }
