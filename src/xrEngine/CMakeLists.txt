@@ -22,6 +22,8 @@ add_library(xrSimCore STATIC
     xrSim/xrSimBridge.h
     xrSim/xrSimNullAgent.cpp
     xrSim/xrSimNullAgent.h
+    xrSim/xrSimPackSpawn.cpp
+    xrSim/xrSimPackSpawn.h
     xrSim/xrSimWorldState.cpp
     xrSim/xrSimWorldState.h
 )

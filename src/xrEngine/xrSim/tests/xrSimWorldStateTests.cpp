@@ -7,6 +7,7 @@
 #include "xrSim/xrSimWorldState.h"
 #include "xrSim/xrSimBridge.h"
 #include "xrSim/xrSimNullAgent.h"
+#include "xrSim/xrSimPackSpawn.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -1467,6 +1468,65 @@ bool TestActorObservationIncludesLastIntentSummary()
         "actor observation includes one-line last intent summary") && ok;
     return ok;
 }
+
+bool TestPackSpawnPayloadParserAcceptsDefaults()
+{
+    const xrSim::PackSpawnParseResult parsed = xrSim::ParsePackSpawnPayload("dog_weak 3");
+    bool ok = Expect(parsed.ok, "pack spawn parser accepts section and count");
+    ok = Expect(parsed.request.section == "dog_weak", "pack spawn parser captures section") && ok;
+    ok = Expect(parsed.request.count == 3, "pack spawn parser captures count") && ok;
+    ok = Expect(parsed.request.radiusMeters == 8, "pack spawn parser defaults radius") && ok;
+    return ok;
+}
+
+bool TestPackSpawnPayloadParserRejectsUnsafeValues()
+{
+    bool ok = true;
+    ok = Expect(!xrSim::ParsePackSpawnPayload("dog_weak 0").ok, "pack spawn parser rejects zero count") && ok;
+    ok = Expect(!xrSim::ParsePackSpawnPayload("dog_weak 9").ok, "pack spawn parser rejects too many members") && ok;
+    ok = Expect(!xrSim::ParsePackSpawnPayload("dog_weak 2 0").ok, "pack spawn parser rejects zero radius") && ok;
+    ok = Expect(!xrSim::ParsePackSpawnPayload("dog_weak 2 41").ok, "pack spawn parser rejects too large radius") && ok;
+    ok = Expect(!xrSim::ParsePackSpawnPayload("dog_weak 2 8 trailing").ok, "pack spawn parser rejects trailing tokens") && ok;
+    return ok;
+}
+
+bool TestSessionPackRegistryRegistersIdsAndObserves()
+{
+    xrSim::ResetSessionPacksForTests();
+    xrSim::PackRegistration registration;
+    registration.section = "dog_weak";
+    registration.objectIds = {1010, 1011, 1012};
+    registration.spawnReason = "session_spawn";
+
+    const xrSim::PackRegisterResult result = xrSim::RegisterSessionMutantPack(registration);
+    bool ok = Expect(result.ok, "pack registry accepts valid registration");
+    ok = Expect(result.packId == 1, "pack registry allocates first pack id") && ok;
+    ok = Expect(xrSim::FormatPackList().find("PACK#1") != std::string::npos, "pack list includes id") && ok;
+    ok = Expect(xrSim::FormatPackList().find("members=3") != std::string::npos, "pack list includes member count") && ok;
+    return ok;
+}
+
+bool TestSessionPackWakeUsesMutantPackIntent()
+{
+    xrSim::ResetSessionPacksForTests();
+    xrSim::PackRegistration registration;
+    registration.section = "dog_weak";
+    registration.objectIds = {1010, 1011, 1012};
+    const xrSim::PackRegisterResult registered = xrSim::RegisterSessionMutantPack(registration);
+
+    xrSim::WorldState world;
+    const xrSim::Handle region = world.CreateRegion("debug_region", 100);
+    const xrSim::Handle species = world.CreateSpecies("blind_dog");
+    bool ok = Expect(world.SetPopulation(region, species, 50).ok, "pack wake setup accepts population");
+
+    xrSim::ActorRuntime runtime;
+    const xrSim::ActuatorResult wake = xrSim::WakePack(registered.packId, world, runtime, 0);
+    ok = Expect(wake.ok, "pack wake succeeds") && ok;
+    ok = Expect(runtime.LastProviderResult().plan.goal == "feed_without_losing_alpha",
+        "pack wake uses mutant pack deterministic intent") && ok;
+    ok = Expect(!wake.commands.empty(), "pack wake emits actuator commands") && ok;
+    return ok;
+}
 } // namespace
 
 int main()
@@ -1531,5 +1591,9 @@ int main()
     ok = TestAgentBridgeAliases() && ok;
     ok = TestActorBridgeVerbs() && ok;
     ok = TestAnthropicTextResponseParsesPrettyPrintedUnicodeTextBlock() && ok;
+    ok = TestPackSpawnPayloadParserAcceptsDefaults() && ok;
+    ok = TestPackSpawnPayloadParserRejectsUnsafeValues() && ok;
+    ok = TestSessionPackRegistryRegistersIdsAndObserves() && ok;
+    ok = TestSessionPackWakeUsesMutantPackIntent() && ok;
     return ok ? 0 : 1;
 }
