@@ -7,6 +7,21 @@
 
 namespace xrSim
 {
+struct ActorWakeSubmitResult
+{
+    bool ok = false;
+    uint64_t requestId = 0;
+    std::string reason;
+};
+
+struct ActorWakePollResult
+{
+    bool ok = false;
+    bool ready = false;
+    std::string reason;
+    ActorProviderResult providerResult;
+};
+
 class AnthropicActorIntentProvider final : public IActorIntentProvider
 {
 public:
@@ -24,4 +39,22 @@ private:
 };
 
 std::unique_ptr<IActorIntentProvider> CreateLiveActorIntentProvider(const AgentProviderConfig& config);
+
+class AsyncActorProviderQueue
+{
+public:
+    explicit AsyncActorProviderQueue(std::unique_ptr<IActorIntentProvider> provider);
+    ~AsyncActorProviderQueue();
+
+    AsyncActorProviderQueue(const AsyncActorProviderQueue&) = delete;
+    AsyncActorProviderQueue& operator=(const AsyncActorProviderQueue&) = delete;
+
+    ActorWakeSubmitResult Submit(const ActorWakeContext& context);
+    ActorWakePollResult Poll(uint64_t requestId);
+    void Shutdown();
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
+};
 } // namespace xrSim

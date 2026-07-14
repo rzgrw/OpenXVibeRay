@@ -2,6 +2,12 @@
 
 #include "xrSim/xrSimAnthropicTransport.h"
 
+#include <condition_variable>
+#include <deque>
+#include <mutex>
+#include <thread>
+#include <unordered_map>
+
 namespace xrSim
 {
 namespace
@@ -93,5 +99,149 @@ std::unique_ptr<IActorIntentProvider> CreateLiveActorIntentProvider(const AgentP
     if (config.provider == "anthropic")
         provider->SetOwnedTransport(CreateAnthropicHttpTransport());
     return provider;
+}
+
+struct AsyncActorProviderQueue::Impl
+{
+    struct Job
+    {
+        uint64_t requestId = 0;
+        ActorWakeContext context;
+    };
+
+    struct Request
+    {
+        bool ready = false;
+        ActorProviderResult result;
+    };
+
+    explicit Impl(std::unique_ptr<IActorIntentProvider> providerValue) : provider(std::move(providerValue))
+    {
+        if (provider)
+            worker = std::thread([this] { WorkerLoop(); });
+        else
+            shutdown = true;
+    }
+
+    void WorkerLoop()
+    {
+        for (;;)
+        {
+            Job job;
+            {
+                std::unique_lock lock{mutex};
+                wake.wait(lock, [this] { return shutdown || !jobs.empty(); });
+                if (shutdown && jobs.empty())
+                    return;
+                job = std::move(jobs.front());
+                jobs.pop_front();
+            }
+
+            ActorProviderResult result = provider->Wake(job.context);
+
+            std::lock_guard guard{mutex};
+            const auto request = requests.find(job.requestId);
+            if (request != requests.end())
+            {
+                request->second.ready = true;
+                request->second.result = std::move(result);
+            }
+        }
+    }
+
+    std::unique_ptr<IActorIntentProvider> provider;
+    std::thread worker;
+    std::mutex mutex;
+    std::condition_variable wake;
+    std::deque<Job> jobs;
+    std::unordered_map<uint64_t, Request> requests;
+    uint64_t nextRequestId = 1;
+    bool shutdown = false;
+};
+
+AsyncActorProviderQueue::AsyncActorProviderQueue(std::unique_ptr<IActorIntentProvider> provider)
+    : m_impl(std::make_unique<Impl>(std::move(provider)))
+{
+}
+
+AsyncActorProviderQueue::~AsyncActorProviderQueue() { Shutdown(); }
+
+ActorWakeSubmitResult AsyncActorProviderQueue::Submit(const ActorWakeContext& context)
+{
+    ActorWakeSubmitResult result;
+    if (!m_impl)
+    {
+        result.reason = "queue_shutdown";
+        return result;
+    }
+
+    {
+        std::lock_guard guard{m_impl->mutex};
+        if (m_impl->shutdown)
+        {
+            result.reason = "queue_shutdown";
+            return result;
+        }
+
+        result.requestId = m_impl->nextRequestId++;
+        m_impl->requests.emplace(result.requestId, Impl::Request{});
+        m_impl->jobs.push_back(Impl::Job{result.requestId, context});
+    }
+    m_impl->wake.notify_one();
+    result.ok = true;
+    return result;
+}
+
+ActorWakePollResult AsyncActorProviderQueue::Poll(uint64_t requestId)
+{
+    ActorWakePollResult result;
+    if (!m_impl)
+    {
+        result.reason = "queue_shutdown";
+        return result;
+    }
+
+    std::lock_guard guard{m_impl->mutex};
+    const auto request = m_impl->requests.find(requestId);
+    if (request == m_impl->requests.end())
+    {
+        result.reason = "unknown_request";
+        return result;
+    }
+
+    result.ok = true;
+    result.ready = request->second.ready;
+    if (result.ready)
+    {
+        result.providerResult = std::move(request->second.result);
+        m_impl->requests.erase(request);
+    }
+    return result;
+}
+
+void AsyncActorProviderQueue::Shutdown()
+{
+    if (!m_impl)
+        return;
+
+    {
+        std::lock_guard guard{m_impl->mutex};
+        if (m_impl->shutdown)
+        {
+            if (!m_impl->worker.joinable())
+                return;
+        }
+        else
+        {
+            m_impl->shutdown = true;
+            m_impl->jobs.clear();
+        }
+    }
+
+    if (m_impl->provider)
+        m_impl->provider->Cancel();
+    m_impl->wake.notify_all();
+    if (m_impl->worker.joinable())
+        m_impl->worker.join();
 }
 } // namespace xrSim

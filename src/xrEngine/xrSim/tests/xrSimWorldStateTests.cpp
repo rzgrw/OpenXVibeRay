@@ -12,8 +12,12 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <chrono>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace
@@ -36,6 +40,74 @@ public:
     std::string seenPath;
     std::string seenBody;
     uint32_t calls = 0;
+};
+
+class BlockingActorProvider : public xrSim::IActorIntentProvider
+{
+public:
+    xrSim::ActorProviderResult Wake(const xrSim::ActorWakeContext& context) override
+    {
+        {
+            std::lock_guard guard{m_mutex};
+            m_entered = true;
+            seenAgentId = context.actor.agentId;
+        }
+        m_cv.notify_all();
+
+        std::unique_lock lock{m_mutex};
+        m_cv.wait(lock, [this] { return m_released || m_cancelled; });
+
+        xrSim::ActorProviderResult result;
+        if (m_cancelled)
+        {
+            result.ok = true;
+            result.coast = true;
+            result.provider = "blocking-fixture";
+            result.model = "fixture";
+            result.coastReason = "cancelled";
+            result.plan.coast = true;
+            return result;
+        }
+
+        result.ok = true;
+        result.provider = "blocking-fixture";
+        result.model = "fixture";
+        result.plan.goal = "queued_pack_goal";
+        return result;
+    }
+
+    void Cancel() override
+    {
+        {
+            std::lock_guard guard{m_mutex};
+            m_cancelled = true;
+        }
+        m_cv.notify_all();
+    }
+
+    bool WaitUntilEntered()
+    {
+        std::unique_lock lock{m_mutex};
+        return m_cv.wait_for(lock, std::chrono::seconds(1), [this] { return m_entered; });
+    }
+
+    void Release()
+    {
+        {
+            std::lock_guard guard{m_mutex};
+            m_released = true;
+        }
+        m_cv.notify_all();
+    }
+
+    uint32_t seenAgentId = 0;
+
+private:
+    std::mutex m_mutex;
+    std::condition_variable m_cv;
+    bool m_entered = false;
+    bool m_released = false;
+    bool m_cancelled = false;
 };
 
 class ScopedEnvVar
@@ -844,6 +916,63 @@ bool TestAnthropicActorProviderCoastsOnTransportFailure()
     ok = Expect(result.coast, "anthropic actor transport failure marks coast") && ok;
     ok = Expect(result.coastReason == "transport_error", "anthropic actor transport failure explains coast") && ok;
     ok = Expect(result.error == "timeout", "anthropic actor transport failure preserves detail") && ok;
+    return ok;
+}
+
+bool TestAsyncActorProviderQueueRunsWakeOffCallerThread()
+{
+    auto provider = std::make_unique<BlockingActorProvider>();
+    BlockingActorProvider* providerView = provider.get();
+    xrSim::AsyncActorProviderQueue queue(std::move(provider));
+
+    xrSim::ActorWakeContext context;
+    context.actor = xrSim::MakeDebugMutantPackAgent();
+    context.prompt = "xrsim_actor_wake_v1\nend\n";
+
+    const xrSim::ActorWakeSubmitResult submitted = queue.Submit(context);
+    bool ok = Expect(submitted.ok, "async actor queue accepts copied wake context");
+    ok = Expect(submitted.requestId == 1, "async actor queue starts request ids at one") && ok;
+    ok = Expect(providerView->WaitUntilEntered(), "async actor worker enters provider") && ok;
+
+    xrSim::ActorWakePollResult polled = queue.Poll(submitted.requestId);
+    ok = Expect(polled.ok, "async actor pending poll succeeds") && ok;
+    ok = Expect(!polled.ready, "async actor first poll reports pending") && ok;
+    ok = Expect(providerView->seenAgentId == context.actor.agentId, "async actor worker receives copied actor id") && ok;
+
+    providerView->Release();
+    for (uint32_t attempt = 0; attempt < 100; ++attempt)
+    {
+        polled = queue.Poll(submitted.requestId);
+        if (polled.ready || !polled.ok)
+            break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+
+    ok = Expect(polled.ok, "async actor completed poll succeeds") && ok;
+    ok = Expect(polled.ready, "async actor completed poll becomes ready") && ok;
+    ok = Expect(polled.providerResult.plan.goal == "queued_pack_goal", "async actor poll returns provider plan") && ok;
+
+    const xrSim::ActorWakePollResult consumed = queue.Poll(submitted.requestId);
+    ok = Expect(!consumed.ok, "async actor completion is consumed exactly once") && ok;
+    ok = Expect(consumed.reason == "unknown_request", "async actor consumed request reports stable reason") && ok;
+
+    const xrSim::ActorWakePollResult unknown = queue.Poll(999);
+    ok = Expect(!unknown.ok, "async actor unknown request fails as value") && ok;
+    ok = Expect(unknown.reason == "unknown_request", "async actor unknown request explains reason") && ok;
+    return ok;
+}
+
+bool TestAsyncActorProviderQueueRejectsSubmitAfterShutdown()
+{
+    auto provider = std::make_unique<BlockingActorProvider>();
+    xrSim::AsyncActorProviderQueue queue(std::move(provider));
+    queue.Shutdown();
+
+    xrSim::ActorWakeContext context;
+    context.actor = xrSim::MakeDebugSquadAgent();
+    const xrSim::ActorWakeSubmitResult submitted = queue.Submit(context);
+    bool ok = Expect(!submitted.ok, "async actor queue rejects submit after shutdown");
+    ok = Expect(submitted.reason == "queue_shutdown", "async actor shutdown submit explains reason") && ok;
     return ok;
 }
 
@@ -1703,6 +1832,8 @@ int main()
     ok = TestAnthropicActorProviderParsesInjectedTransportIntent() && ok;
     ok = TestAnthropicActorProviderCoastsWithoutApiKey() && ok;
     ok = TestAnthropicActorProviderCoastsOnTransportFailure() && ok;
+    ok = TestAsyncActorProviderQueueRunsWakeOffCallerThread() && ok;
+    ok = TestAsyncActorProviderQueueRejectsSubmitAfterShutdown() && ok;
     ok = TestAnthropicHttpTransportFactoryMatchesAvailability() && ok;
     ok = TestActorIntentParserAcceptsSquadPlan() && ok;
     ok = TestActorIntentParserAcceptsCoast() && ok;

@@ -1,5 +1,6 @@
 #include "xrSim/xrSimAnthropicTransport.h"
 
+#include <atomic>
 #include <chrono>
 
 #if defined(XRAY_AGENT_HTTP_CURL)
@@ -17,6 +18,12 @@ size_t WriteBody(char* ptr, size_t size, size_t nmemb, void* userdata)
     std::string* body = static_cast<std::string*>(userdata);
     body->append(ptr, bytes);
     return bytes;
+}
+
+int CheckCancelled(void* userdata, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
+{
+    const auto* cancelled = static_cast<const std::atomic_bool*>(userdata);
+    return cancelled->load(std::memory_order_acquire) ? 1 : 0;
 }
 
 bool EnsureCurlGlobalInitialized(std::string& error)
@@ -99,6 +106,9 @@ public:
         curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
         curl_easy_setopt(curl, CURLOPT_USERAGENT, "OpenXVibeRay-xrSim/1");
         curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, errorBuffer);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, CheckCancelled);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &m_cancelled);
 
         const CURLcode rc = curl_easy_perform(curl);
         long status = 0;
@@ -116,13 +126,19 @@ public:
         else
         {
             result.ok = false;
-            result.error = errorBuffer[0] ? errorBuffer : curl_easy_strerror(rc);
+            result.error = rc == CURLE_ABORTED_BY_CALLBACK ? "cancelled"
+                                                           : (errorBuffer[0] ? errorBuffer : curl_easy_strerror(rc));
         }
 
         curl_slist_free_all(headers);
         curl_easy_cleanup(curl);
         return result;
     }
+
+    void Cancel() override { m_cancelled.store(true, std::memory_order_release); }
+
+private:
+    std::atomic_bool m_cancelled{false};
 };
 #endif
 } // namespace
