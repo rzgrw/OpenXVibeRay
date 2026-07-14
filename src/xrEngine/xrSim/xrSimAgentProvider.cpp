@@ -797,13 +797,18 @@ std::string FormatAgentProviderLedgerRecord(
 AnthropicMessagesRequest BuildAnthropicMessagesRequest(
     const AgentProviderConfig& config, const AgentWakeContext& context, uint32_t maxTokens)
 {
+    return BuildAnthropicMessagesRequestForPrompt(config, BuildAgentWakePrompt(context), maxTokens);
+}
+
+AnthropicMessagesRequest BuildAnthropicMessagesRequestForPrompt(
+    const AgentProviderConfig& config, const std::string& prompt, uint32_t maxTokens)
+{
     AnthropicMessagesRequest request;
     request.method = "POST";
     request.path = "/v1/messages";
     request.anthropicVersion = "2023-06-01";
     request.contentType = "application/json";
 
-    const std::string prompt = BuildAgentWakePrompt(context);
     std::ostringstream body;
     body << "{";
     body << "\"model\":\"" << EscapeJsonString(config.model) << "\",";
@@ -814,20 +819,35 @@ AnthropicMessagesRequest BuildAnthropicMessagesRequest(
     return request;
 }
 
+AnthropicTextResult DecodeAnthropicMessagesText(const std::string& text)
+{
+    AnthropicTextResult result;
+    bool foundTextBlock = false;
+    if (!ExtractAnthropicTextContent(text, result.text, foundTextBlock))
+    {
+        result.error = foundTextBlock ? "invalid anthropic text content" : "anthropic response missing text block";
+        result.text.clear();
+        return result;
+    }
+    if (!foundTextBlock)
+    {
+        result.error = "anthropic response missing text block";
+        result.text.clear();
+        return result;
+    }
+
+    result.ok = true;
+    return result;
+}
+
 AgentProviderResult ParseAnthropicMessagesTextResponse(
     const std::string& text, const std::string& provider, const std::string& model)
 {
-    std::string responseText;
-    bool foundTextBlock = false;
-    if (!ExtractAnthropicTextContent(text, responseText, foundTextBlock))
-    {
-        return FailResponse(provider, model, foundTextBlock ? "invalid anthropic text content"
-                                                            : "anthropic response missing text block");
-    }
-    if (!foundTextBlock)
-        return FailResponse(provider, model, "anthropic response missing text block");
+    const AnthropicTextResult decoded = DecodeAnthropicMessagesText(text);
+    if (!decoded.ok)
+        return FailResponse(provider, model, decoded.error);
 
-    return ParseAgentProviderResponse(responseText, provider, model);
+    return ParseAgentProviderResponse(decoded.text, provider, model);
 }
 
 RecordedTextAgentProvider::RecordedTextAgentProvider(

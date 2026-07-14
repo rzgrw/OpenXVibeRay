@@ -2,6 +2,7 @@
 #include "xrSim/xrSimAnthropicTransport.h"
 #include "xrSim/xrSimActuator.h"
 #include "xrSim/xrSimActorIntent.h"
+#include "xrSim/xrSimActorProvider.h"
 #include "xrSim/xrSimActorRuntime.h"
 #include "xrSim/xrSimActors.h"
 #include "xrSim/xrSimWorldState.h"
@@ -25,6 +26,7 @@ public:
     {
         seenModel = config.model;
         seenPath = request.path;
+        seenBody = request.body;
         ++calls;
         return result;
     }
@@ -32,6 +34,7 @@ public:
     xrSim::AnthropicTransportResult result;
     std::string seenModel;
     std::string seenPath;
+    std::string seenBody;
     uint32_t calls = 0;
 };
 
@@ -751,6 +754,96 @@ bool TestAnthropicProviderShellCoastsOnTransportFailure()
     ok = Expect(result.coast, "anthropic shell transport failure marks coast") && ok;
     ok = Expect(result.coastReason == "transport_error", "anthropic shell transport failure records coast reason") && ok;
     ok = Expect(result.error == "timeout", "anthropic shell transport failure keeps error detail") && ok;
+    return ok;
+}
+
+bool TestAnthropicActorProviderParsesInjectedTransportIntent()
+{
+    xrSim::AgentProviderConfig config;
+    config.provider = "anthropic";
+    config.model = "claude-sonnet-5";
+    config.apiKey = "secret";
+
+    FakeAnthropicTransport transport;
+    transport.result.ok = true;
+    transport.result.status = 200;
+    transport.result.body =
+        "{\"content\":[{\"type\":\"text\",\"text\":\"xrsim_actor_intent_v1\\n"
+        "goal avoid_player_until_dark\\n"
+        "stance cautious\\n"
+        "duration_ms 4000\\n"
+        "action stalk target_player crescent\\n"
+        "end\\n\"}]}";
+
+    xrSim::AnthropicActorIntentProvider provider(config);
+    provider.SetTransport(&transport);
+
+    xrSim::ActorWakeContext context;
+    context.actor = xrSim::MakeDebugMutantPackAgent();
+    context.observation = "agent_id 201\nscope MUTANT_PACK\n";
+    context.prompt = "xrsim_actor_wake_v1\nagent_id 201\nreturn xrsim_actor_intent_v1\nend\n";
+
+    const xrSim::ActorProviderResult result = provider.Wake(context);
+    bool ok = Expect(result.ok, "anthropic actor provider accepts injected transport response");
+    ok = Expect(!result.coast, "anthropic actor provider response is not coast") && ok;
+    ok = Expect(result.provider == "anthropic", "anthropic actor provider stamps provider") && ok;
+    ok = Expect(result.model == "claude-sonnet-5", "anthropic actor provider stamps model") && ok;
+    ok = Expect(result.plan.goal == "avoid_player_until_dark", "anthropic actor provider parses goal") && ok;
+    ok = Expect(result.plan.actions.size() == 1, "anthropic actor provider parses one action") && ok;
+    if (result.plan.actions.size() == 1)
+        ok = Expect(result.plan.actions[0].verb == "stalk", "anthropic actor provider parses stalk action") && ok;
+    ok = Expect(transport.calls == 1, "anthropic actor provider calls injected transport once") && ok;
+    ok = Expect(transport.seenPath == "/v1/messages", "anthropic actor provider uses messages api") && ok;
+    ok = Expect(transport.seenBody.find("xrsim_actor_wake_v1") != std::string::npos,
+        "anthropic actor request contains actor prompt") && ok;
+    return ok;
+}
+
+bool TestAnthropicActorProviderCoastsWithoutApiKey()
+{
+    xrSim::AgentProviderConfig config;
+    config.provider = "anthropic";
+    config.model = "claude-sonnet-5";
+
+    FakeAnthropicTransport transport;
+    xrSim::AnthropicActorIntentProvider provider(config);
+    provider.SetTransport(&transport);
+
+    xrSim::ActorWakeContext context;
+    context.actor = xrSim::MakeDebugSquadAgent();
+    context.prompt = "xrsim_actor_wake_v1\nend\n";
+
+    const xrSim::ActorProviderResult result = provider.Wake(context);
+    bool ok = Expect(result.ok, "anthropic actor missing key succeeds as coast");
+    ok = Expect(result.coast, "anthropic actor missing key marks coast") && ok;
+    ok = Expect(result.coastReason == "missing_api_key", "anthropic actor missing key explains coast") && ok;
+    ok = Expect(transport.calls == 0, "anthropic actor missing key skips transport") && ok;
+    return ok;
+}
+
+bool TestAnthropicActorProviderCoastsOnTransportFailure()
+{
+    xrSim::AgentProviderConfig config;
+    config.provider = "anthropic";
+    config.model = "claude-sonnet-5";
+    config.apiKey = "secret";
+
+    FakeAnthropicTransport transport;
+    transport.result.ok = false;
+    transport.result.error = "timeout";
+
+    xrSim::AnthropicActorIntentProvider provider(config);
+    provider.SetTransport(&transport);
+
+    xrSim::ActorWakeContext context;
+    context.actor = xrSim::MakeDebugSquadAgent();
+    context.prompt = "xrsim_actor_wake_v1\nend\n";
+
+    const xrSim::ActorProviderResult result = provider.Wake(context);
+    bool ok = Expect(result.ok, "anthropic actor transport failure succeeds as coast");
+    ok = Expect(result.coast, "anthropic actor transport failure marks coast") && ok;
+    ok = Expect(result.coastReason == "transport_error", "anthropic actor transport failure explains coast") && ok;
+    ok = Expect(result.error == "timeout", "anthropic actor transport failure preserves detail") && ok;
     return ok;
 }
 
@@ -1607,6 +1700,9 @@ int main()
     ok = TestAnthropicTextResponseParsesThroughAgentCodec() && ok;
     ok = TestAnthropicProviderShellUsesInjectedTransport() && ok;
     ok = TestAnthropicProviderShellCoastsOnTransportFailure() && ok;
+    ok = TestAnthropicActorProviderParsesInjectedTransportIntent() && ok;
+    ok = TestAnthropicActorProviderCoastsWithoutApiKey() && ok;
+    ok = TestAnthropicActorProviderCoastsOnTransportFailure() && ok;
     ok = TestAnthropicHttpTransportFactoryMatchesAvailability() && ok;
     ok = TestActorIntentParserAcceptsSquadPlan() && ok;
     ok = TestActorIntentParserAcceptsCoast() && ok;

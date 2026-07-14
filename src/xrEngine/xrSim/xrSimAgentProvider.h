@@ -67,12 +67,20 @@ struct AnthropicTransportResult
     std::string error;
 };
 
+struct AnthropicTextResult
+{
+    bool ok = false;
+    std::string text;
+    std::string error;
+};
+
 class IAnthropicTransport
 {
 public:
     virtual ~IAnthropicTransport() = default;
     virtual AnthropicTransportResult Send(
         const AgentProviderConfig& config, const AnthropicMessagesRequest& request) = 0;
+    virtual void Cancel() {}
 };
 
 class IAgentProvider
@@ -125,6 +133,9 @@ std::string FormatAgentProviderLedgerRecord(
     uint32_t seq, const AgentWakeContext& context, const AgentProviderResult& result, uint32_t latencyMs);
 AnthropicMessagesRequest BuildAnthropicMessagesRequest(
     const AgentProviderConfig& config, const AgentWakeContext& context, uint32_t maxTokens);
+AnthropicMessagesRequest BuildAnthropicMessagesRequestForPrompt(
+    const AgentProviderConfig& config, const std::string& prompt, uint32_t maxTokens);
+AnthropicTextResult DecodeAnthropicMessagesText(const std::string& text);
 AgentProviderResult ParseAnthropicMessagesTextResponse(
     const std::string& text, const std::string& provider, const std::string& model);
 

@@ -18,6 +18,7 @@ struct ActorProviderResult
     std::string provider;
     std::string model;
     std::string error;
+    std::string coastReason;
     ActorIntentPlan plan;
 };
 
@@ -26,6 +27,7 @@ class IActorIntentProvider
 public:
     virtual ~IActorIntentProvider() = default;
     virtual ActorProviderResult Wake(const ActorWakeContext& context) = 0;
+    virtual void Cancel() {}
 };
 
 class DeterministicActorIntentProvider : public IActorIntentProvider
