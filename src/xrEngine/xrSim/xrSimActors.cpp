@@ -153,6 +153,18 @@ std::string BuildActorWakePrompt(
     out << BuildActorObservation(actor, world, situation);
     out << "rules\n";
     out << "return xrsim_actor_intent_v1\n";
+    out << "response_first_line xrsim_actor_intent_v1\n";
+    out << "response_record goal <single_token>\n";
+    out << "response_record stance <single_token>\n";
+    out << "response_record duration_ms <uint32>\n";
+    out << "response_record action <legal_tool> [target] [arg0] [arg1]\n";
+    out << "response_record action adjust_population <region> <species> <delta:int>\n";
+    out << "response_record memory <single_token>\n";
+    out << "response_alternative coast\n";
+    out << "response_last_line end\n";
+    out << "single_token_values_use_underscores\n";
+    out << "output_schema_lines_only no_prose no_markdown no_code_fence\n";
+    out << "do_not_repeat_observation_fields agent_id scope name memory_summary situation world_digest legal_tools current_goal last_intent\n";
     out << "llm_owns_decisions cxx_owns_embodiment\n";
     out << "do_not_emit_unlisted_tools\n";
     out << "end\n";

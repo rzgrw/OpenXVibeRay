@@ -135,7 +135,18 @@ ActorIntentParseResult ParseActorIntentPlan(const std::string& text)
 {
     std::istringstream input(text);
     std::string line;
-    if (!std::getline(input, line) || line != "xrsim_actor_intent_v1")
+    bool sawVersion = false;
+    while (std::getline(input, line))
+    {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        if (line == "xrsim_actor_intent_v1")
+        {
+            sawVersion = true;
+            break;
+        }
+    }
+    if (!sawVersion)
         return FailActorIntent("unsupported actor intent version");
 
     ActorIntentParseResult result;
@@ -150,6 +161,8 @@ ActorIntentParseResult ParseActorIntentPlan(const std::string& text)
     bool sawEnd = false;
     while (std::getline(input, line))
     {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
         if (line.empty())
             continue;
 
@@ -173,7 +186,15 @@ ActorIntentParseResult ParseActorIntentPlan(const std::string& text)
         std::istringstream record(line);
         std::string key;
         record >> key;
-        if (key == "goal")
+        if (key == "agent_id" || key == "game_day")
+        {
+            std::string valueText;
+            std::string extra;
+            uint32_t ignored = 0;
+            if (!(record >> valueText) || record >> extra || !ParseUint32Token(valueText, ignored))
+                return FailActorIntent("invalid actor intent metadata");
+        }
+        else if (key == "goal")
         {
             if (!ReadSingleToken(record, result.plan.goal))
                 return FailActorIntent("invalid goal record");

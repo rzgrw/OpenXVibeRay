@@ -198,6 +198,8 @@ python3 tools/agentctl.py <sock> agent.actor.poll 2
 
   A wake returns `... queued request=N`; poll returns `pending` or the applied result with provider/model/coast metadata. Deterministic wake payloads remain backward compatible. The older coarse `agent.wake live` path is still a synchronous diagnostic; do not use it from a frame-critical scheduler.
 
+- **Real Anthropic acceptance status (2026-07-14):** API-key propagation, `state=ready`, curl transport, and off-frame execution are proven; frames continued advancing during every live request. The model added a prose/fence preface and echoed `agent_id`, then `scope`, exposing that the actor prompt did not define its response grammar precisely enough. The codec now tolerates the same preface/CRLF and numeric metadata already accepted by the coarse codec, and the prompt now lists every legal output record while explicitly forbidding prose, Markdown, and observation echo. Unit tests and the full build cover these changes, but the strengthened prompt still needs one fresh-key live non-coast acceptance run. Do not claim that final gate green yet.
+
 Current boundary / next AI milestone:
 - Actor commands are validated and retained in the xrSim command ledger, and coarse tools such as `adjust_population` mutate `WorldState`, but movement/combat commands are **not yet steering the spawned X-Ray objects**. Wire the command stream into the near-player ALife/monster executor without giving the LLM direct per-frame control.
 - Replace manual bridge dispatch with the surprise/cadence scheduler, bounded in-flight accounting, cost/token ledger, and record/replay packets from the agentic-Zone spec.

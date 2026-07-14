@@ -1065,6 +1065,54 @@ bool TestActorIntentParserAcceptsCoast()
     return ok;
 }
 
+bool TestActorIntentParserFindsVersionAfterModelPreface()
+{
+    const xrSim::ActorIntentParseResult parsed = xrSim::ParseActorIntentPlan(
+        "Here is the requested intent:\r\n"
+        "```text\r\n"
+        "xrsim_actor_intent_v1\r\n"
+        "goal avoid_player_until_dark\r\n"
+        "stance cautious\r\n"
+        "duration_ms 4000\r\n"
+        "action stalk target_player crescent\r\n"
+        "end\r\n"
+        "```\r\n");
+
+    bool ok = Expect(parsed.ok, "actor intent parser finds version after model preface");
+    ok = Expect(parsed.plan.goal == "avoid_player_until_dark",
+        "actor intent parser preserves prefaced response goal") && ok;
+    ok = Expect(parsed.plan.actions.size() == 1,
+        "actor intent parser preserves prefaced response action") && ok;
+    return ok;
+}
+
+bool TestActorIntentParserAcceptsEchoedNumericMetadata()
+{
+    const xrSim::ActorIntentParseResult parsed = xrSim::ParseActorIntentPlan(
+        "xrsim_actor_intent_v1\n"
+        "agent_id 2001\n"
+        "game_day 7\n"
+        "goal avoid_player_until_dark\n"
+        "stance cautious\n"
+        "duration_ms 4000\n"
+        "action stalk target_player crescent\n"
+        "end\n");
+
+    bool ok = Expect(parsed.ok, "actor intent parser accepts echoed numeric metadata");
+    ok = Expect(parsed.plan.goal == "avoid_player_until_dark",
+        "actor intent parser keeps plan after echoed metadata") && ok;
+
+    const xrSim::ActorIntentParseResult invalid = xrSim::ParseActorIntentPlan(
+        "xrsim_actor_intent_v1\n"
+        "agent_id not_a_number\n"
+        "coast\n"
+        "end\n");
+    ok = Expect(!invalid.ok, "actor intent parser rejects invalid echoed metadata") && ok;
+    ok = Expect(invalid.reason == "invalid actor intent metadata",
+        "actor intent parser explains invalid echoed metadata") && ok;
+    return ok;
+}
+
 bool TestActorIntentParserSupportsVerbOnlyActionFormatRoundTrip()
 {
     const xrSim::ActorIntentParseResult parsed = xrSim::ParseActorIntentPlan(
@@ -1278,6 +1326,18 @@ bool TestDebugMutantPackObservationUsesPackTools()
         "mutant prompt records pack legal tools") && ok;
     ok = Expect(prompt.find("return xrsim_actor_intent_v1") != std::string::npos,
         "mutant prompt requests actor intent response") && ok;
+    ok = Expect(prompt.find("response_record goal <single_token>") != std::string::npos,
+        "mutant prompt defines goal response grammar") && ok;
+    ok = Expect(prompt.find("response_record action <legal_tool> [target] [arg0] [arg1]") != std::string::npos,
+        "mutant prompt defines action response grammar") && ok;
+    ok = Expect(prompt.find("response_record action adjust_population <region> <species> <delta:int>") !=
+            std::string::npos,
+        "mutant prompt defines population action grammar") && ok;
+    ok = Expect(prompt.find("output_schema_lines_only no_prose no_markdown no_code_fence") != std::string::npos,
+        "mutant prompt forbids response wrappers") && ok;
+    ok = Expect(prompt.find("do_not_repeat_observation_fields agent_id scope name memory_summary situation world_digest legal_tools") !=
+            std::string::npos,
+        "mutant prompt forbids observation echo") && ok;
     return ok;
 }
 
@@ -1994,6 +2054,8 @@ int main()
     ok = TestAnthropicHttpTransportFactoryMatchesAvailability() && ok;
     ok = TestActorIntentParserAcceptsSquadPlan() && ok;
     ok = TestActorIntentParserAcceptsCoast() && ok;
+    ok = TestActorIntentParserFindsVersionAfterModelPreface() && ok;
+    ok = TestActorIntentParserAcceptsEchoedNumericMetadata() && ok;
     ok = TestActorIntentParserSupportsVerbOnlyActionFormatRoundTrip() && ok;
     ok = TestActorIntentParserRoutesAdjustPopulationAmountIntoActuator() && ok;
     ok = TestActorIntentParserRejectsMalformedAdjustPopulationAction() && ok;
