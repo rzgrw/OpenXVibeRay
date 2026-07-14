@@ -112,6 +112,8 @@ class DryRunCliTests(unittest.TestCase):
             "agent.actor.observe squad",
             "agent.actor.wake squad",
             "agent.actor.commands",
+            "agent.actor.wake squad live",
+            "agent.actor.poll 1",
             "agent.actor.observe mutant_pack",
             "agent.actor.wake mutant_pack",
             "agent.actor.commands",

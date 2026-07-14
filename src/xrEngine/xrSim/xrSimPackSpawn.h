@@ -36,11 +36,21 @@ struct PackRegisterResult
     std::string reason;
 };
 
+struct PackWakePrepareResult
+{
+    bool ok = false;
+    std::string reason;
+    ActorWakeContext context;
+};
+
 PackSpawnParseResult ParsePackSpawnPayload(const std::string& payload);
 PackRegisterResult RegisterSessionMutantPack(const PackRegistration& registration);
 void ResetSessionPacks();
 void ResetSessionPacksForTests();
 std::string FormatPackList();
 std::string ObservePack(uint32_t packId, const WorldState& world);
+PackWakePrepareResult PreparePackWake(uint32_t packId, const WorldState& world, uint32_t gameDay);
+ActuatorResult ApplyPackWakeResult(uint32_t packId, WorldState& world, ActorRuntime& runtime,
+    const ActorProviderResult& providerResult, uint32_t gameDay);
 ActuatorResult WakePack(uint32_t packId, WorldState& world, ActorRuntime& runtime, uint32_t gameDay);
 } // namespace xrSim

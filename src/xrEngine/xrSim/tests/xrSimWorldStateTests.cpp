@@ -976,6 +976,37 @@ bool TestAsyncActorProviderQueueRejectsSubmitAfterShutdown()
     return ok;
 }
 
+bool TestAsyncActorProviderQueueFailsOutstandingRequestsOnShutdown()
+{
+    auto provider = std::make_unique<BlockingActorProvider>();
+    BlockingActorProvider* providerView = provider.get();
+    xrSim::AsyncActorProviderQueue queue(std::move(provider));
+
+    xrSim::ActorWakeContext firstContext;
+    firstContext.actor = xrSim::MakeDebugSquadAgent();
+    const xrSim::ActorWakeSubmitResult first = queue.Submit(firstContext);
+    bool ok = Expect(first.ok, "async actor shutdown test accepts in-flight request");
+    ok = Expect(providerView->WaitUntilEntered(), "async actor shutdown test enters provider") && ok;
+
+    xrSim::ActorWakeContext secondContext;
+    secondContext.actor = xrSim::MakeDebugMutantPackAgent();
+    const xrSim::ActorWakeSubmitResult second = queue.Submit(secondContext);
+    ok = Expect(second.ok, "async actor shutdown test accepts queued request") && ok;
+
+    queue.Shutdown();
+
+    const xrSim::ActorWakePollResult firstPoll = queue.Poll(first.requestId);
+    ok = Expect(!firstPoll.ok, "async actor shutdown fails in-flight request") && ok;
+    ok = Expect(firstPoll.ready, "async actor shutdown marks in-flight request complete") && ok;
+    ok = Expect(firstPoll.reason == "queue_shutdown", "async actor in-flight shutdown explains reason") && ok;
+
+    const xrSim::ActorWakePollResult secondPoll = queue.Poll(second.requestId);
+    ok = Expect(!secondPoll.ok, "async actor shutdown fails queued request") && ok;
+    ok = Expect(secondPoll.ready, "async actor shutdown marks queued request complete") && ok;
+    ok = Expect(secondPoll.reason == "queue_shutdown", "async actor queued shutdown explains reason") && ok;
+    return ok;
+}
+
 bool TestAnthropicHttpTransportFactoryMatchesAvailability()
 {
     const bool available = xrSim::IsAnthropicHttpTransportAvailable();
@@ -1338,6 +1369,39 @@ bool TestActorRuntimeWakesDebugMutantPack()
     return ok;
 }
 
+bool TestActorRuntimePreparesAndAppliesProviderResultOnCaller()
+{
+    xrSim::WorldState state;
+    state.CreateRegion("debug_region", 100);
+    state.CreateSpecies("blind_dog");
+
+    xrSim::ActorAgentRecord pack = xrSim::MakeDebugMutantPackAgent();
+    xrSim::ActorRuntime runtime;
+    const xrSim::ActorWakeContext context = runtime.PrepareWake(pack, state, "heard_gunfire", 7);
+
+    bool ok = Expect(context.actor.agentId == pack.agentId, "actor runtime prepare copies actor id");
+    ok = Expect(context.observation.find("situation heard_gunfire") != std::string::npos,
+        "actor runtime prepare builds observation") && ok;
+    ok = Expect(context.prompt.find("xrsim_actor_wake_v1") == 0,
+        "actor runtime prepare builds actor prompt") && ok;
+
+    xrSim::ActorProviderResult providerResult;
+    providerResult.ok = true;
+    providerResult.provider = "fixture";
+    providerResult.model = "fixture-model";
+    providerResult.plan.goal = "avoid_player_until_dark";
+    providerResult.plan.stance = "cautious";
+    providerResult.plan.durationMs = 4000;
+    providerResult.plan.actions.push_back(xrSim::ActorAction{"stalk", "target_player", "crescent", "", 0});
+
+    const xrSim::ActuatorResult applied = runtime.ApplyProviderResult(state, pack, providerResult, 7);
+    ok = Expect(applied.ok, "actor runtime applies prepared provider result") && ok;
+    ok = Expect(pack.lastIntent.goal == "avoid_player_until_dark", "actor runtime apply stores provider goal") && ok;
+    ok = Expect(runtime.LastProviderResult().provider == "fixture", "actor runtime apply stores provider metadata") && ok;
+    ok = Expect(runtime.LastCommands().size() == 2, "actor runtime apply emits stance and stalk commands") && ok;
+    return ok;
+}
+
 bool TestRecordedActorProviderExhaustionFailsAsValue()
 {
     std::vector<std::string> script;
@@ -1433,7 +1497,8 @@ bool TestActorRuntimeCoastPreservesPriorEmbodiedIntent()
     xrSim::ActuatorResult result = runtime.Wake(state, squad, "player_visible medium_range", 1);
     bool ok = Expect(result.ok, "actor coast regression setup wake succeeds");
     const xrSim::ActorIntentPlan previousIntent = squad.lastIntent;
-    ok = Expect(runtime.LastCommands().size() >= 2, "actor coast regression setup stores commands") && ok;
+    const size_t previousCommandCount = runtime.LastCommands().size();
+    ok = Expect(previousCommandCount >= 2, "actor coast regression setup stores commands") && ok;
     ok = Expect(runtime.WakeCount() == 1, "actor coast regression setup records initial wake count") && ok;
 
     std::vector<std::string> script;
@@ -1448,10 +1513,44 @@ bool TestActorRuntimeCoastPreservesPriorEmbodiedIntent()
 
     ok = Expect(result.ok, "actor runtime accepts provider coast") && ok;
     ok = Expect(result.coast, "actor runtime reports coast result") && ok;
-    ok = Expect(runtime.LastCommands().empty(), "actor runtime clears commands for coast wake") && ok;
+    ok = Expect(runtime.LastCommands().size() == previousCommandCount,
+        "actor runtime preserves commands for coast wake") && ok;
+    ok = Expect(result.commands.size() == previousCommandCount,
+        "actor runtime returns prior embodied commands for coast wake") && ok;
     ok = Expect(runtime.WakeCount() == 1, "actor runtime does not count coast as new embodied wake") && ok;
     ok = Expect(squad.lastIntent.goal == previousIntent.goal, "actor runtime keeps previous goal on coast") && ok;
     ok = Expect(squad.lastIntent.stance == previousIntent.stance, "actor runtime keeps previous stance on coast") && ok;
+    return ok;
+}
+
+bool TestActorRuntimeCoastUsesTargetActorCommands()
+{
+    xrSim::WorldState state;
+    state.CreateRegion("debug_region", 100);
+    state.CreateSpecies("blind_dog");
+
+    xrSim::ActorAgentRecord squad = xrSim::MakeDebugSquadAgent();
+    xrSim::ActorAgentRecord pack = xrSim::MakeDebugMutantPackAgent();
+    xrSim::ActorRuntime runtime;
+
+    xrSim::ActuatorResult result = runtime.Wake(state, squad, "player_visible medium_range", 1);
+    bool ok = Expect(result.ok, "per-actor coast setup wakes squad");
+    const std::string squadCommands = xrSim::FormatActuatorCommands(result.commands);
+
+    result = runtime.Wake(state, pack, "heard_gunfire", 1);
+    ok = Expect(result.ok, "per-actor coast setup wakes mutant pack") && ok;
+    ok = Expect(xrSim::FormatActuatorCommands(result.commands) != squadCommands,
+        "per-actor coast setup produces distinct command streams") && ok;
+
+    std::vector<std::string> script;
+    script.push_back("xrsim_actor_intent_v1\ncoast\nend\n");
+    xrSim::RecordedActorIntentProvider coastProvider(script);
+    runtime.SetProvider(&coastProvider);
+
+    result = runtime.Wake(state, squad, "player_visible medium_range", 2);
+    ok = Expect(result.ok && result.coast, "per-actor coast accepts squad coast") && ok;
+    ok = Expect(xrSim::FormatActuatorCommands(result.commands) == squadCommands,
+        "per-actor coast restores the target squad command stream") && ok;
     return ok;
 }
 
@@ -1793,6 +1892,63 @@ bool TestPackBridgeRegisterInitializesBeforeSessionPack()
     xrSim::HandleBridgeVerb("ai.reset", "", verbOk);
     return ok && Expect(verbOk, "pack bridge no-reset regression cleanup succeeds");
 }
+
+bool TestLiveActorAndPackBridgeWakesQueueAndPoll()
+{
+    ScopedEnvVar provider("XRAY_AGENT_PROVIDER", "off");
+    ScopedEnvVar model("XRAY_AGENT_MODEL", "claude-sonnet-5-queue-test");
+
+    bool verbOk = false;
+    std::string out = xrSim::HandleBridgeVerb("ai.reset", "", verbOk);
+    bool ok = Expect(verbOk, "live actor bridge reset succeeds");
+
+    out = xrSim::HandleBridgeVerb("agent.actor.wake", "squad live", verbOk);
+    ok = Expect(verbOk, "live actor wake queues") && ok;
+    ok = Expect(out == "actor wake queued request=1", "live actor wake reports first request id") && ok;
+
+    for (uint32_t attempt = 0; attempt < 100; ++attempt)
+    {
+        out = xrSim::HandleBridgeVerb("agent.actor.poll", "1", verbOk);
+        if (!verbOk || out.rfind("pending", 0) != 0)
+            break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    ok = Expect(verbOk, "live actor poll completes") && ok;
+    ok = Expect(out.find("actor wake scope=SQUAD") != std::string::npos,
+        "live actor poll identifies squad target") && ok;
+    ok = Expect(out.find("provider=off") != std::string::npos, "live actor poll reports provider") && ok;
+    ok = Expect(out.find("coast=provider_disabled") != std::string::npos,
+        "live actor poll reports disabled-provider coast") && ok;
+
+    out = xrSim::HandleBridgeVerb("agent.actor.poll", "1", verbOk);
+    ok = Expect(!verbOk, "live actor completion cannot be consumed twice") && ok;
+    ok = Expect(out == "unknown request: 1", "live actor second poll reports stable error") && ok;
+
+    out = xrSim::HandleBridgeVerb("agent.pack.register", "dog_weak 3010 3011 3012", verbOk);
+    ok = Expect(verbOk, "live pack test registers pack") && ok;
+    out = xrSim::HandleBridgeVerb("agent.pack.wake", "1 live", verbOk);
+    ok = Expect(verbOk, "live pack wake queues") && ok;
+    ok = Expect(out == "pack wake queued request=2", "live pack wake reports second request id") && ok;
+
+    for (uint32_t attempt = 0; attempt < 100; ++attempt)
+    {
+        out = xrSim::HandleBridgeVerb("agent.actor.poll", "2", verbOk);
+        if (!verbOk || out.rfind("pending", 0) != 0)
+            break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    ok = Expect(verbOk, "live pack poll completes") && ok;
+    ok = Expect(out.find("pack wake id=1") != std::string::npos, "live pack poll identifies pack target") && ok;
+    ok = Expect(out.find("coast=provider_disabled") != std::string::npos,
+        "live pack poll reports disabled-provider coast") && ok;
+
+    out = xrSim::HandleBridgeVerb("agent.actor.poll", "999", verbOk);
+    ok = Expect(!verbOk, "live actor unknown poll fails as value") && ok;
+    ok = Expect(out == "unknown request: 999", "live actor unknown poll explains request") && ok;
+
+    xrSim::HandleBridgeVerb("ai.reset", "", verbOk);
+    return ok && Expect(verbOk, "live actor bridge cleanup reset succeeds");
+}
 } // namespace
 
 int main()
@@ -1834,6 +1990,7 @@ int main()
     ok = TestAnthropicActorProviderCoastsOnTransportFailure() && ok;
     ok = TestAsyncActorProviderQueueRunsWakeOffCallerThread() && ok;
     ok = TestAsyncActorProviderQueueRejectsSubmitAfterShutdown() && ok;
+    ok = TestAsyncActorProviderQueueFailsOutstandingRequestsOnShutdown() && ok;
     ok = TestAnthropicHttpTransportFactoryMatchesAvailability() && ok;
     ok = TestActorIntentParserAcceptsSquadPlan() && ok;
     ok = TestActorIntentParserAcceptsCoast() && ok;
@@ -1850,10 +2007,12 @@ int main()
     ok = TestActorObservationSanitizesInjectedControlLines() && ok;
     ok = TestActorRuntimeWakesDebugSquad() && ok;
     ok = TestActorRuntimeWakesDebugMutantPack() && ok;
+    ok = TestActorRuntimePreparesAndAppliesProviderResultOnCaller() && ok;
     ok = TestRecordedActorProviderExhaustionFailsAsValue() && ok;
     ok = TestActorRuntimeClearsLastCommandsWhenProviderFails() && ok;
     ok = TestActorRuntimePreservesLastIntentWhenExecutionFails() && ok;
     ok = TestActorRuntimeCoastPreservesPriorEmbodiedIntent() && ok;
+    ok = TestActorRuntimeCoastUsesTargetActorCommands() && ok;
     ok = TestNullAgentWakeAppliesDeterministicIntent() && ok;
     ok = TestPackBridgeRegisterInitializesBeforeSessionPack() && ok;
     ok = TestBridgeDebugVerbs() && ok;
@@ -1868,5 +2027,6 @@ int main()
     ok = TestSessionPackRegistryRegistersIdsAndObserves() && ok;
     ok = TestSessionPackWakeUsesMutantPackIntent() && ok;
     ok = TestPackBridgeVerbsRegisterObserveWake() && ok;
+    ok = TestLiveActorAndPackBridgeWakesQueueAndPoll() && ok;
     return ok ? 0 : 1;
 }

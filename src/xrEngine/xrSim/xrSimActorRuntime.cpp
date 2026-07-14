@@ -62,38 +62,67 @@ ActorProviderResult RecordedActorIntentProvider::Wake(const ActorWakeContext& co
 
 void ActorRuntime::SetProvider(IActorIntentProvider* provider) { m_provider = provider; }
 
-ActuatorResult ActorRuntime::Wake(
-    WorldState& world, ActorAgentRecord& actor, const std::string& situation, uint32_t gameDay)
+ActorWakeContext ActorRuntime::PrepareWake(const ActorAgentRecord& actor, const WorldState& world,
+    const std::string& situation, uint32_t gameDay) const
 {
-    m_lastCommands.clear();
-
     ActorWakeContext context;
     context.actor = actor;
+    context.gameDay = gameDay;
     context.observation = BuildActorObservation(actor, world, situation);
     context.prompt = BuildActorWakePrompt(actor, world, situation);
+    return context;
+}
 
-    DeterministicActorIntentProvider defaultProvider;
-    IActorIntentProvider* provider = m_provider ? m_provider : &defaultProvider;
-    m_lastProviderResult = provider->Wake(context);
+ActuatorResult ActorRuntime::ApplyProviderResult(WorldState& world, ActorAgentRecord& actor,
+    const ActorProviderResult& providerResult, uint32_t gameDay)
+{
+    m_lastProviderResult = providerResult;
     if (!m_lastProviderResult.ok)
     {
+        m_lastCommands.clear();
+        m_actorCommands.erase(actor.agentId);
         ActuatorResult failed;
         failed.reason = m_lastProviderResult.error.empty() ? "actor provider failed" : m_lastProviderResult.error;
         return failed;
     }
 
+    if (m_lastProviderResult.coast || m_lastProviderResult.plan.coast)
+    {
+        const auto previous = m_actorCommands.find(actor.agentId);
+        if (previous == m_actorCommands.end())
+            m_lastCommands.clear();
+        else
+            m_lastCommands = previous->second;
+
+        ActuatorResult coast;
+        coast.ok = true;
+        coast.coast = true;
+        coast.reason = m_lastProviderResult.coastReason.empty() ? "coast" : m_lastProviderResult.coastReason;
+        coast.commands = m_lastCommands;
+        return coast;
+    }
+
+    m_lastCommands.clear();
+    m_actorCommands.erase(actor.agentId);
     ActuatorResult executed = ExecuteActorIntent(world, actor, m_lastProviderResult.plan, gameDay);
-    if (executed.ok && !executed.coast)
+    if (executed.ok)
     {
         actor.lastIntent = m_lastProviderResult.plan;
         m_lastCommands = executed.commands;
+        m_actorCommands[actor.agentId] = m_lastCommands;
         ++m_wakeCount;
     }
-    else if (executed.ok)
-    {
-        m_lastCommands = executed.commands;
-    }
     return executed;
+}
+
+ActuatorResult ActorRuntime::Wake(
+    WorldState& world, ActorAgentRecord& actor, const std::string& situation, uint32_t gameDay)
+{
+    const ActorWakeContext context = PrepareWake(actor, world, situation, gameDay);
+
+    DeterministicActorIntentProvider defaultProvider;
+    IActorIntentProvider* provider = m_provider ? m_provider : &defaultProvider;
+    return ApplyProviderResult(world, actor, provider->Wake(context), gameDay);
 }
 
 uint32_t ActorRuntime::WakeCount() const { return m_wakeCount; }

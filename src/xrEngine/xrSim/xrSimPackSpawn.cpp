@@ -152,6 +152,38 @@ std::string ObservePack(uint32_t packId, const WorldState& world)
     return BuildActorObservation(pack->actor, world, BuildPackSituation(*pack));
 }
 
+PackWakePrepareResult PreparePackWake(uint32_t packId, const WorldState& world, uint32_t gameDay)
+{
+    const SessionPack* pack = FindPack(packId);
+    if (!pack)
+    {
+        PackWakePrepareResult result;
+        result.reason = "unknown pack: " + std::to_string(packId);
+        return result;
+    }
+
+    PackWakePrepareResult result;
+    result.ok = true;
+    result.context.actor = pack->actor;
+    result.context.gameDay = gameDay;
+    result.context.observation = BuildActorObservation(pack->actor, world, BuildPackSituation(*pack));
+    result.context.prompt = BuildActorWakePrompt(pack->actor, world, BuildPackSituation(*pack));
+    return result;
+}
+
+ActuatorResult ApplyPackWakeResult(uint32_t packId, WorldState& world, ActorRuntime& runtime,
+    const ActorProviderResult& providerResult, uint32_t gameDay)
+{
+    SessionPack* pack = FindPack(packId);
+    if (!pack)
+    {
+        ActuatorResult result;
+        result.reason = "unknown pack: " + std::to_string(packId);
+        return result;
+    }
+    return runtime.ApplyProviderResult(world, pack->actor, providerResult, gameDay);
+}
+
 ActuatorResult WakePack(uint32_t packId, WorldState& world, ActorRuntime& runtime, uint32_t gameDay)
 {
     SessionPack* pack = FindPack(packId);

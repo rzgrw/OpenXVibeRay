@@ -1,6 +1,7 @@
 #include "xrSim/xrSimBridge.h"
 #include "xrSim/xrSimAgentProvider.h"
 #include "xrSim/xrSimAnthropicTransport.h"
+#include "xrSim/xrSimActorProvider.h"
 #include "xrSim/xrSimActorRuntime.h"
 #include "xrSim/xrSimNullAgent.h"
 #include "xrSim/xrSimPackSpawn.h"
@@ -9,6 +10,7 @@
 #include <cstdio>
 #include <memory>
 #include <sstream>
+#include <unordered_map>
 
 namespace xrSim
 {
@@ -19,11 +21,37 @@ NullAgentRuntime g_nullAgent;
 ActorRuntime g_actorRuntime;
 ActorAgentRecord g_debugSquad;
 ActorAgentRecord g_debugMutantPack;
+std::unique_ptr<AsyncActorProviderQueue> g_liveActorQueue;
+
+enum class PendingActorWakeKind
+{
+    DebugActor,
+    SessionPack,
+};
+
+struct PendingActorWake
+{
+    PendingActorWakeKind kind = PendingActorWakeKind::DebugActor;
+    std::string actorName;
+    uint32_t packId = 0;
+    uint32_t gameDay = 0;
+};
+
+std::unordered_map<uint64_t, PendingActorWake> g_pendingActorWakes;
 uint32_t g_nextSeq = 1;
 bool g_initialized = false;
 
+void ResetLiveActorQueue()
+{
+    if (g_liveActorQueue)
+        g_liveActorQueue->Shutdown();
+    g_liveActorQueue.reset();
+    g_pendingActorWakes.clear();
+}
+
 void ResetDebugWorld()
 {
+    ResetLiveActorQueue();
     g_debugWorld = WorldState{};
     g_nullAgent = NullAgentRuntime{};
     g_actorRuntime = ActorRuntime{};
@@ -35,6 +63,17 @@ void ResetDebugWorld()
     g_nextSeq = 1;
     g_initialized = true;
     ResetSessionPacks();
+}
+
+AsyncActorProviderQueue* EnsureLiveActorQueue()
+{
+    if (!g_liveActorQueue)
+    {
+        const AgentProviderConfig config = LoadAgentProviderConfigFromEnvironment();
+        g_liveActorQueue =
+            std::make_unique<AsyncActorProviderQueue>(CreateLiveActorIntentProvider(config));
+    }
+    return g_liveActorQueue.get();
 }
 
 void EnsureDebugWorld()
@@ -171,14 +210,44 @@ ActorAgentRecord* FindDebugActor(const std::string& name)
 
 std::string WakeDebugActor(const std::string& payload, bool& ok)
 {
-    ActorAgentRecord* actor = FindDebugActor(payload);
+    std::istringstream input(payload);
+    std::string actorName;
+    std::string mode;
+    std::string trailing;
+    if (!(input >> actorName) || (input >> mode && input >> trailing))
+    {
+        ok = false;
+        return "usage: agent.actor.wake <squad|mutant_pack> [live]";
+    }
+    if (!mode.empty() && mode != "live")
+    {
+        ok = false;
+        return "usage: agent.actor.wake <squad|mutant_pack> [live]";
+    }
+
+    ActorAgentRecord* actor = FindDebugActor(actorName);
     if (!actor)
     {
         ok = false;
-        return "unknown actor: " + payload;
+        return "unknown actor: " + actorName;
     }
 
-    const std::string situation = payload == "mutant_pack" ? "heard_gunfire" : "player_visible medium_range";
+    const std::string situation = actorName == "mutant_pack" ? "heard_gunfire" : "player_visible medium_range";
+    if (mode == "live")
+    {
+        const ActorWakeContext context = g_actorRuntime.PrepareWake(*actor, g_debugWorld, situation, 0);
+        const ActorWakeSubmitResult submitted = EnsureLiveActorQueue()->Submit(context);
+        ok = submitted.ok;
+        if (!submitted.ok)
+            return submitted.reason;
+
+        PendingActorWake pending;
+        pending.kind = PendingActorWakeKind::DebugActor;
+        pending.actorName = actorName;
+        g_pendingActorWakes[submitted.requestId] = pending;
+        return "actor wake queued request=" + std::to_string(submitted.requestId);
+    }
+
     const ActuatorResult result = g_actorRuntime.Wake(g_debugWorld, *actor, situation, 0);
     ok = result.ok;
     if (!result.ok)
@@ -194,6 +263,24 @@ bool ParsePackId(const std::string& payload, uint32_t& packId)
     std::istringstream in(payload);
     std::string trailing;
     return bool(in >> packId) && !(in >> trailing);
+}
+
+bool ParsePackWakePayload(const std::string& payload, uint32_t& packId, bool& live)
+{
+    std::istringstream in(payload);
+    std::string mode;
+    std::string trailing;
+    if (!(in >> packId))
+        return false;
+    if (!(in >> mode))
+    {
+        live = false;
+        return true;
+    }
+    if (mode != "live" || in >> trailing)
+        return false;
+    live = true;
+    return true;
 }
 
 std::string RegisterPackFromPayload(const std::string& payload, bool& ok)
@@ -259,13 +346,35 @@ std::string ObserveRegisteredPack(const std::string& payload, bool& ok)
 std::string WakeRegisteredPack(const std::string& payload, bool& ok)
 {
     uint32_t packId = 0;
-    if (!ParsePackId(payload, packId))
+    bool live = false;
+    if (!ParsePackWakePayload(payload, packId, live))
     {
         ok = false;
-        return "usage: agent.pack.wake <pack_id>";
+        return "usage: agent.pack.wake <pack_id> [live]";
     }
 
     EnsureDebugWorld();
+    if (live)
+    {
+        const PackWakePrepareResult prepared = PreparePackWake(packId, g_debugWorld, 0);
+        if (!prepared.ok)
+        {
+            ok = false;
+            return prepared.reason;
+        }
+
+        const ActorWakeSubmitResult submitted = EnsureLiveActorQueue()->Submit(prepared.context);
+        ok = submitted.ok;
+        if (!submitted.ok)
+            return submitted.reason;
+
+        PendingActorWake pending;
+        pending.kind = PendingActorWakeKind::SessionPack;
+        pending.packId = packId;
+        g_pendingActorWakes[submitted.requestId] = pending;
+        return "pack wake queued request=" + std::to_string(submitted.requestId);
+    }
+
     const ActuatorResult result = WakePack(packId, g_debugWorld, g_actorRuntime, 0);
     ok = result.ok;
     if (!result.ok)
@@ -275,6 +384,87 @@ std::string WakeRegisteredPack(const std::string& payload, bool& ok)
     std::ostringstream out;
     out << "pack wake id=" << packId << " goal=" << provider.plan.goal << " commands=" << result.commands.size()
         << " applied_delta=" << result.appliedDelta;
+    return out.str();
+}
+
+std::string PollLiveActorWake(const std::string& payload, bool& ok)
+{
+    std::istringstream in(payload);
+    uint64_t requestId = 0;
+    std::string trailing;
+    if (!(in >> requestId) || in >> trailing)
+    {
+        ok = false;
+        return "usage: agent.actor.poll <request_id>";
+    }
+
+    const auto pending = g_pendingActorWakes.find(requestId);
+    if (!g_liveActorQueue || pending == g_pendingActorWakes.end())
+    {
+        ok = false;
+        return "unknown request: " + std::to_string(requestId);
+    }
+
+    ActorWakePollResult polled = g_liveActorQueue->Poll(requestId);
+    if (!polled.ok)
+    {
+        g_pendingActorWakes.erase(pending);
+        ok = false;
+        return polled.reason;
+    }
+    if (!polled.ready)
+    {
+        ok = true;
+        return "pending request=" + std::to_string(requestId);
+    }
+
+    const PendingActorWake binding = pending->second;
+    g_pendingActorWakes.erase(pending);
+
+    ActuatorResult applied;
+    ActorAgentRecord* actor = nullptr;
+    if (binding.kind == PendingActorWakeKind::DebugActor)
+    {
+        actor = FindDebugActor(binding.actorName);
+        if (!actor)
+        {
+            ok = false;
+            return "unknown actor: " + binding.actorName;
+        }
+        applied = g_actorRuntime.ApplyProviderResult(
+            g_debugWorld, *actor, polled.providerResult, binding.gameDay);
+    }
+    else
+    {
+        applied = ApplyPackWakeResult(
+            binding.packId, g_debugWorld, g_actorRuntime, polled.providerResult, binding.gameDay);
+    }
+
+    ok = applied.ok;
+    if (!applied.ok)
+        return applied.reason;
+
+    std::ostringstream out;
+    if (binding.kind == PendingActorWakeKind::DebugActor)
+    {
+        out << "actor wake scope=" << ActorScopeName(actor->scope) << " id=" << actor->agentId;
+    }
+    else
+    {
+        out << "pack wake id=" << binding.packId;
+    }
+    if (!polled.providerResult.plan.goal.empty())
+        out << " goal=" << polled.providerResult.plan.goal;
+    out << " commands=" << applied.commands.size();
+    out << " applied_delta=" << applied.appliedDelta;
+    out << " provider=" << polled.providerResult.provider;
+    out << " model=" << polled.providerResult.model;
+    if (applied.coast)
+    {
+        const std::string reason = polled.providerResult.coastReason.empty() ? applied.reason
+                                                                            : polled.providerResult.coastReason;
+        out << " coast=" << reason;
+    }
     return out.str();
 }
 } // namespace
@@ -405,6 +595,9 @@ std::string HandleBridgeVerb(const std::string& verb, const std::string& payload
 
     if (verb == "agent.actor.wake")
         return WakeDebugActor(payload, ok);
+
+    if (verb == "agent.actor.poll")
+        return PollLiveActorWake(payload, ok);
 
     if (verb == "agent.actor.commands")
     {

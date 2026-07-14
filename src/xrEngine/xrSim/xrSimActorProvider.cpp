@@ -111,7 +111,15 @@ struct AsyncActorProviderQueue::Impl
 
     struct Request
     {
-        bool ready = false;
+        enum class State
+        {
+            Pending,
+            Ready,
+            Failed,
+        };
+
+        State state = State::Pending;
+        std::string reason;
         ActorProviderResult result;
     };
 
@@ -141,9 +149,9 @@ struct AsyncActorProviderQueue::Impl
 
             std::lock_guard guard{mutex};
             const auto request = requests.find(job.requestId);
-            if (request != requests.end())
+            if (request != requests.end() && request->second.state == Request::State::Pending)
             {
-                request->second.ready = true;
+                request->second.state = Request::State::Ready;
                 request->second.result = std::move(result);
             }
         }
@@ -209,8 +217,16 @@ ActorWakePollResult AsyncActorProviderQueue::Poll(uint64_t requestId)
         return result;
     }
 
+    if (request->second.state == Impl::Request::State::Failed)
+    {
+        result.ready = true;
+        result.reason = request->second.reason;
+        m_impl->requests.erase(request);
+        return result;
+    }
+
     result.ok = true;
-    result.ready = request->second.ready;
+    result.ready = request->second.state == Impl::Request::State::Ready;
     if (result.ready)
     {
         result.providerResult = std::move(request->second.result);
@@ -235,6 +251,15 @@ void AsyncActorProviderQueue::Shutdown()
         {
             m_impl->shutdown = true;
             m_impl->jobs.clear();
+            for (auto& [requestId, request] : m_impl->requests)
+            {
+                (void)requestId;
+                if (request.state == Impl::Request::State::Pending)
+                {
+                    request.state = Impl::Request::State::Failed;
+                    request.reason = "queue_shutdown";
+                }
+            }
         }
     }
 

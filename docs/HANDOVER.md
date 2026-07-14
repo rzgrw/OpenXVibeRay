@@ -1,6 +1,6 @@
 # OpenXVibeRay — Handover
 
-**Last updated:** 2026-07-06
+**Last updated:** 2026-07-14
 **Written for:** a fresh coding agent (Codex) or engineer picking this repo up with zero prior context.
 
 ---
@@ -24,6 +24,7 @@ AI design spec (the active work): [`docs/superpowers/specs/2026-07-05-agentic-zo
 | Branch | State | Notes |
 |---|---|---|
 | `dev` | main line, GL working; **M-R0 merged** (PR #9) + this handover | base for the AI work |
+| `codex/ai-provider-http-transport` | **active AI continuation** | xrSim foundation through live Anthropic actor adapter, cancellable off-frame provider queue, and bridge-driven session pack wakes. |
 | `feat/metal-mr0-first-frame` | **merged to dev** via PR [#9](https://github.com/rzgrw/OpenXVibeRay/pull/9) | Metal renders the CoC main menu. GL/DX11 untouched. |
 | `feat/metal-mr1-ingame` | pushed WIP (`caa2e4953`), **not merged** | Metal deferred-pipeline foundation; in-game scene not yet rendering. Resume guide in §4. Branched off the pre-merge M-R0 tip — rebase onto current `dev` when resuming. |
 
@@ -144,7 +145,7 @@ Because GL already runs the full game, the AI work does **not** need the rendere
 
 ### 5.1 xrSim foundation checkpoint
 
-The first AI substrate is on `codex/ai-zone-foundation`: `src/xrEngine/xrSim/` contains a deterministic coarse `WorldState`, stable index+generation handles, clamped `adjust_population`, and an append-only tool log. It is intentionally provider-free: this is the replayable C++ substrate the LLM layer will drive later.
+The first AI substrate began on `codex/ai-zone-foundation`; the current continuation is `codex/ai-provider-http-transport`. `src/xrEngine/xrSim/` contains a deterministic coarse `WorldState`, stable index+generation handles, clamped `adjust_population`, an append-only tool log, actor intent validation, and the provider handoff. The C++ substrate remains replayable even though live model output is not deterministic.
 
 Debug bridge verbs are available in `-agent_bridge` sessions:
 
@@ -172,14 +173,35 @@ Thin-harness actor checkpoint:
   - `agent.actor.observe mutant_pack`
   - `agent.actor.wake mutant_pack`
   - `agent.actor.commands`
+- Session pack verbs create and register real mutant objects for the current level session:
+  - `agent.pack.spawn <section> <count> [radius_m]`
+  - `agent.pack.list`
+  - `agent.pack.observe <pack_id>`
+  - `agent.pack.wake <pack_id>`
 - Smoke: `python3 tools/gl_macos_soak.py --scenario tools/ai_thin_harness_smoke.txt --artifacts artifacts/ai_thin_harness_smoke`
 
-Provider shell checkpoint (provider-free, no HTTP yet):
+Provider and asynchronous actor checkpoint:
 - Default live provider config is `provider=anthropic`, `model=claude-sonnet-5`, `timeout_ms=30000`.
 - Env overrides: `XRAY_AGENT_PROVIDER`, `XRAY_AGENT_MODEL`, `XRAY_AGENT_API_KEY` or `ANTHROPIC_API_KEY`, `XRAY_AGENT_TIMEOUT_MS`.
 - Missing key is a normal **coast** value (`reason=missing_api_key`), not an error/throw. With a key present, the live provider shell now has an optional curl-backed HTTP transport when `XRAY_AGENT_HTTP=ON` and CMake finds `CURL::libcurl`; otherwise it still coasts with `network_adapter_not_linked`.
 - `agent.provider live` reports the effective shell state and `transport=<curl|unavailable>` through the bridge; deterministic null remains the default runtime provider.
-- The Anthropic Messages API envelope is shaped locally (`POST /v1/messages`, API version `2023-06-01`, JSON body with `model`, `max_tokens`, `messages`). Response text blocks are decoded into the existing `xrsim_agent_response_v1` codec. The linked curl transport is still synchronous and should be used from the future provider I/O thread, not from frame-critical bridge wake verbs.
+- The Anthropic Messages API envelope is shaped locally (`POST /v1/messages`, API version `2023-06-01`, JSON body with `model`, `max_tokens`, `messages`). Coarse Zone responses decode as `xrsim_agent_response_v1`; actor/pack responses decode as `xrsim_actor_intent_v1`.
+- Live actor and pack requests now run through one cancellable provider worker. Wake preparation copies all context, the worker owns the synchronous curl call off the frame thread, and polling applies the validated result back on the engine/bridge thread. `ai.reset` and shutdown cancel in-flight curl work.
+- Live bridge flow:
+
+```bash
+python3 tools/agentctl.py <sock> agent.actor.wake squad live
+python3 tools/agentctl.py <sock> agent.actor.poll 1
+python3 tools/agentctl.py <sock> agent.pack.wake '1 live'
+python3 tools/agentctl.py <sock> agent.actor.poll 2
+```
+
+  A wake returns `... queued request=N`; poll returns `pending` or the applied result with provider/model/coast metadata. Deterministic wake payloads remain backward compatible. The older coarse `agent.wake live` path is still a synchronous diagnostic; do not use it from a frame-critical scheduler.
+
+Current boundary / next AI milestone:
+- Actor commands are validated and retained in the xrSim command ledger, and coarse tools such as `adjust_population` mutate `WorldState`, but movement/combat commands are **not yet steering the spawned X-Ray objects**. Wire the command stream into the near-player ALife/monster executor without giving the LLM direct per-frame control.
+- Replace manual bridge dispatch with the surprise/cadence scheduler, bounded in-flight accounting, cost/token ledger, and record/replay packets from the agentic-Zone spec.
+- Transfer authoritative lifecycle ownership from legacy ALife to xrMind/xrSim in slices; the current session pack registry is a verified materialization seam, not the completed ownership inversion.
 
 ---
 
