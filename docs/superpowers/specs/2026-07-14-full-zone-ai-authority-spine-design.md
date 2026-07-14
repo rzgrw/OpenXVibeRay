@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-14
 
-**Status:** Design sections approved; written-spec review pending
+**Status:** Approved for implementation
 
 **Implementation target:** Gate 1, the Garbage vertical slice
 
