@@ -1,139 +1,370 @@
-<div align="center">
-  <h1>OpenXVibeRay</h1>
-  <p><strong>X-Ray Engine, refactored and improved with AI coding agents</strong></p>
-  <p>
-    Fork of <a href="https://github.com/OpenXRay/xray-16">OpenXRay</a> — proving that a legacy C++ game engine can be systematically fixed, ported, and modernized through human-AI collaboration.
-  </p>
-  <p>
-    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue" alt="Platforms" />
-    <img src="https://img.shields.io/badge/macOS-Apple%20Silicon%20%E2%9C%93-000000?logo=apple" alt="Apple Silicon" />
-    <img src="https://img.shields.io/badge/renderer-OpenGL%20%E2%9C%93%20%7C%20Vulkan%20WIP%20(MoltenVK)-blue" alt="Renderer" />
-    <img src="https://img.shields.io/badge/built%20with-Claude%20Code-blueviolet" alt="Built with Claude Code" />
-  </p>
-</div>
+# OpenXVibeRay
 
----
+OpenXVibeRay is a fork of [OpenXRay](https://github.com/OpenXRay/xray-16) that treats the original X-Ray Engine as foundation, not scripture. The goal is to turn S.T.A.L.K.E.R.'s engine into a modern, self-testable, agent-driven runtime: stable on macOS today, moving toward native Metal/Vulkan rendering, and replacing old game AI with LLM-authored world simulation.
 
-## The Concept
+This is an engine project. It does not include S.T.A.L.K.E.R. game data, assets, or proprietary content.
 
-The X-Ray Engine is a 20-year-old C++ codebase — hundreds of thousands of lines, deep platform assumptions, tangled subsystems, and bugs that have survived since 2004. The community has kept it alive, but major refactoring has always been limited by the sheer scale of the work.
+## Current Status
 
-**OpenXVibeRay is a proof of concept:** What happens when you point modern AI coding agents at a real, complex, legacy engine? Not a toy project or a greenfield app — a battle-tested game engine with real users and real bugs.
+Last updated: 2026-07-08.
 
-Every commit in this repo was made through human-AI collaboration using [Claude Code](https://claude.ai/code). The AI investigates crashes, traces call stacks through dylib boundaries, diagnoses architectural issues (like C++ exceptions failing to propagate through LuaJIT's ARM64 assembly trampolines), proposes fixes, writes code, and gets reviewed — all in the same workflow a human engineer would follow, just faster.
+The working runtime is **OpenGL on macOS**, driven through the shipped **agent bridge**. Renderer replacement is paused while the AI rehaul lands on top of the stable GL baseline.
 
-**This isn't about replacing developers. It's about what becomes possible when an AI agent can hold a 1M-token context window full of engine code and systematically work through problems that would take a human days to trace.**
+The active AI direction is:
 
-## What's Been Done
+> LLM owns decisions. C++ owns embodiment.
 
-### macOS Native Port (SP1 - Complete)
+In practice, `xrMind` agents decide intent, tactics, memory, ecology, and off-screen outcomes. `xrSim` and the engine stay deliberately thin: state store, validation, physics, pathing, animation, combat contact, spawning, save/load, and safe execution of bounded commands.
 
-The first major milestone: getting S.T.A.L.K.E.R. running on macOS Apple Silicon. This required diagnosing and fixing real engine bugs, not just flipping build flags:
+What works now:
 
-| Fix | What was broken | Root cause |
-|-----|----------------|------------|
-| **XRAY_EXCEPTIONS=0 on Darwin** | Any Lua script error crashed the process | C++ exceptions can't unwind through LuaJIT's ARM64 assembly trampoline (`lj_BC_FUNCC`) — `std::terminate` instead of propagation |
-| **ALife registry hardening** | Random crashes during gameplay | `CSafeMapIterator::remove()` throwing through LuaJIT boundary; CoC objects in inconsistent state during teleport |
-| **LuaJIT sysroot fix** | Build failure on CommandLineTools-only Macs | Hardcoded `/Applications/Xcode.app/` path in LuaJIT's CMakeLists |
-| **POSIX `_sopen` macro** | Files created with 0000 permissions | Windows share-mode arg landing in POSIX `open()` mode slot |
-| **Sound device fallback** | "Invalid syntax" error on device change | No graceful fallback when saved audio device no longer exists |
+- macOS Apple Silicon build and runtime with OpenGL.
+- Agent bridge launch/control/screenshot harness via `-agent_bridge` and `tools/agentctl.py`.
+- `xrSimCore` world-state, deterministic tool log, snapshot/restore, replay, and value-error validation.
+- Thin LLM harness for squad and mutant-pack observations/wakes.
+- Optional Anthropic HTTP transport through libcurl when `XRAY_AGENT_HTTP` is enabled and curl is found.
+- Live-session mutant pack spawning through the bridge:
+  - `agent.pack.spawn <section> <count> [radius_m]`
+  - `agent.pack.list`
+  - `agent.pack.observe <pack_id>`
+  - `agent.pack.wake <pack_id>`
+  - `agent.pack.commands`
+- A verified live session spawn path for `dog_weak` packs, including pack registration, observation, wake, and accepted actuator command output.
 
-These aren't surface-level patches — the XRAY_EXCEPTIONS fix required understanding the interaction between X-Ray's exception macros, luabind's error handling, LuaJIT's C function trampoline, and ARM64 unwind tables.
+What is not done yet:
 
-### What's Next
+- Full replacement of legacy stalker/monster AI.
+- Full ALife ownership for spawned LLM packs.
+- Async frame-safe provider runtime for frequent live model wakes.
+- Native Metal in-game renderer parity.
+- Vulkan renderer bring-up.
 
-| Phase | Status | Description |
-|-------|--------|-------------|
-| **SP1: macOS Baseline** | Done | Engine builds and runs on macOS Apple Silicon with OpenGL |
-| **SP2: Metal Renderer** | Built & parked | Compiles+links (Tasks 1–21); kept as Mac RT/TBDR insurance. Superseded by the Vulkan plan |
-| **Vulkan Renderer** | Next (V-R0) | Platform-agnostic Vulkan (MoltenVK on macOS, Mac-first) — [plan](docs/superpowers/specs/2026-07-05-engine-roadmap-v2.md) |
-| **SP3: macOS Polish** | Planned | .app bundle, DMG installer, code signing, Retina support |
-| **Engine Improvements** | Ongoing | Fix bugs, improve stability, modernize code across all platforms |
+## Direction
 
-The renderer direction is **Vulkan everywhere** (native on Linux/Windows, MoltenVK on macOS), executed Mac-first — see the [plan of record](docs/superpowers/specs/2026-07-05-engine-roadmap-v2.md). The earlier native-Metal backend was built to compile+link and is parked as the Mac ray-tracing/TBDR insurance path.
+OpenXVibeRay is moving in two big arcs.
 
-But macOS is just the starting point. The long-term goal is proving that AI agents can systematically improve any part of this engine — rendering, physics, AI, networking, tooling — at a pace that wasn't previously feasible.
+### 1. Agentic Zone
 
-## Supported Games
+The Zone should feel simulated by agents, not by hardcoded behavior trees.
 
-- Call of Chernobyl 1.4.22
-- Call of Pripyat 1.6.02
-- Clear Sky 1.5.10 (minor bugs possible)
+- `ZoneAgent` and `FactionAgent` own global tension, raids, faction plans, economy pressure, and quest opportunities.
+- `SquadAgent` owns stalker squad intent: patrol, trade, threaten, flank, rescue, surrender, retreat.
+- `StalkerAgent` is reserved for named or player-touched NPCs with memory and personality continuity.
+- `MutantPackAgent` owns hunger, territory, stalking, ambush timing, retreat, den behavior, and risk tolerance.
+- `EcologyAgent` owns off-screen predator/prey pressure, migration, births, deaths, and local extinction/repopulation.
 
-## Building
+C++ does not decide these behaviors when an LLM intent can decide them. C++ validates the intent and turns it into safe actuators: move, look, aim, shoot, flee, stalk, regroup, vocalize, loot, spawn, or author memory.
 
-### macOS (Apple Silicon / Intel)
+The engine never blocks a frame waiting for the model. If the provider is late, offline, missing a key, or returns invalid output, the actor coasts on the last valid intent and eventually degrades to minimal survival/reflex behavior.
+
+### 2. Native Renderers
+
+OpenGL is the host runtime for current AI work. It is not the destination.
+
+The renderer plan of record is **dual native**:
+
+- **Metal on macOS**: revived Mac renderer path. Menu first-frame is done; in-game bring-up is parked.
+- **Vulkan on Linux/Windows**: not started. MoltenVK may be used on Mac as a development vehicle, not as the final Mac runtime.
+- **OpenGL**: working fallback and AI development host until native renderers reach parity.
+
+See [docs/superpowers/specs/2026-07-05-engine-roadmap-v2.md](docs/superpowers/specs/2026-07-05-engine-roadmap-v2.md) for the roadmap.
+
+## Supported Targets
+
+Primary development target:
+
+- Call of Chernobyl 1.4.22 on macOS, OpenGL renderer.
+
+Upstream compatibility goals:
+
+- S.T.A.L.K.E.R.: Call of Pripyat 1.6.02
+- S.T.A.L.K.E.R.: Clear Sky 1.5.10
+- Linux and Windows OpenXRay targets
+
+The AI bridge and current live-session pack work are being developed and verified against Call of Chernobyl first.
+
+## Build on macOS
+
+Install dependencies:
 
 ```bash
 brew install cmake ccache sdl2 lzo libogg libvorbis theora openal-soft jpeg-turbo
+```
 
+Clone and initialize submodules:
+
+```bash
 git clone https://github.com/rzgrw/OpenXVibeRay.git
 cd OpenXVibeRay
 git submodule update --init --recursive
+```
 
+Configure and build:
+
+```bash
 cmake -B build \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_UNITY_BUILD=ON \
   -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
+
 cmake --build build -j10
 ```
 
-Binaries go to `bin/arm64/Release/`.
+Binaries are written to:
 
-### Windows / Linux
-
-Follow the upstream [OpenXRay build instructions](https://github.com/OpenXRay/xray-16/wiki). All upstream platforms remain supported.
-
-## Running
-
-**You need original game files.** This is an engine only — it does not include any game data. You must own a copy of S.T.A.L.K.E.R. (available on [Steam](https://store.steampowered.com/app/41700/), [GOG](https://www.gog.com/game/stalker_call_of_pripyat)) or use [Call of Chernobyl](https://www.moddb.com/mods/call-of-chernobyl) (standalone free-play mod).
-
-### Game data setup (portable mode)
-
-1. Copy your game files to a directory (e.g. `~/stalker-data/`)
-2. Make sure `fsgame.ltx` is in the root of that directory
-3. Copy the OpenGL shaders from the repo into the game data:
-   ```bash
-   cp -r res/gamedata/shaders/gl/ ~/stalker-data/gamedata/shaders/gl/
-   ```
-4. Launch from the game data directory:
-   ```bash
-   cd ~/stalker-data/
-   DYLD_LIBRARY_PATH=/path/to/OpenXVibeRay/bin/arm64/Release \
-     /path/to/OpenXVibeRay/bin/arm64/Release/xr_3da
-   ```
-
-The engine uses "portable mode" — it looks for `fsgame.ltx` in the current working directory and loads all game data relative to that.
-
-Full setup guide with troubleshooting: [docs/macos-dev-setup.md](docs/macos-dev-setup.md)
-
-## Project Structure
-
+```text
+bin/arm64/Release/
 ```
+
+They are not written under `build/bin/`.
+
+On macOS Tahoe beta, use an explicit SDK if Command Line Tools need it:
+
+```bash
+cmake -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_UNITY_BUILD=ON \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+  -DCMAKE_OSX_SYSROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk
+```
+
+Avoid `cmake --build build --parallel $(sysctl -n hw.ncpu)` on Tahoe. `sysctl -n hw.ncpu` can include trailing whitespace there, so use an explicit value such as `-j10`.
+
+## Run With Game Data
+
+You need original game files or a legal standalone mod install. The engine runs in portable mode: launch it from the directory containing `fsgame.ltx`.
+
+Copy GL shaders into the game data once:
+
+```bash
+cp -r /path/to/OpenXVibeRay/res/gamedata/shaders/gl \
+  /path/to/game/gamedata/shaders/gl
+```
+
+Launch:
+
+```bash
+cd /path/to/game
+DYLD_LIBRARY_PATH=/path/to/OpenXVibeRay/bin/arm64/Release \
+  /path/to/OpenXVibeRay/bin/arm64/Release/xr_3da
+```
+
+Launch directly into a saved single-player session:
+
+```bash
+cd /path/to/game
+DYLD_LIBRARY_PATH=/path/to/OpenXVibeRay/bin/arm64/Release \
+  /path/to/OpenXVibeRay/bin/arm64/Release/xr_3da \
+  -start 'server(1/single/alife/load)' 'client(localhost)'
+```
+
+Full macOS setup and troubleshooting live in [docs/macos-dev-setup.md](docs/macos-dev-setup.md).
+
+## Agent Bridge
+
+The bridge is the standard verification harness. Launch with:
+
+```bash
+cd /path/to/game
+DYLD_LIBRARY_PATH=/path/to/OpenXVibeRay/bin/arm64/Release \
+  /path/to/OpenXVibeRay/bin/arm64/Release/xr_3da -agent_bridge
+```
+
+The default socket is:
+
+```text
+<game>/appdata/agent_bridge.sock
+```
+
+Drive it with:
+
+```bash
+python3 /path/to/OpenXVibeRay/tools/agentctl.py \
+  /path/to/game/appdata/agent_bridge.sock hello
+```
+
+Core verbs:
+
+```text
+hello
+cmd <console command>
+lua <expression>
+key <key> [down|up|tap]
+mouse <dx> <dy> [buttons]
+state
+shot
+bye
+```
+
+Run a bridge script:
+
+```bash
+python3 /path/to/OpenXVibeRay/tools/agentctl.py \
+  /path/to/game/appdata/agent_bridge.sock \
+  --script /path/to/OpenXVibeRay/tools/bridge_soak.txt
+```
+
+Screenshots are written under:
+
+```text
+<game>/appdata/screenshots/
+```
+
+## AI Bridge Verbs
+
+World-state smoke verbs:
+
+```bash
+python3 tools/agentctl.py "$SOCK" ai.reset
+python3 tools/agentctl.py "$SOCK" ai.status
+python3 tools/agentctl.py "$SOCK" ai.observe
+python3 tools/agentctl.py "$SOCK" ai.wake
+python3 tools/agentctl.py "$SOCK" ai.inject "adjust_population debug_region blind_dog 500"
+python3 tools/agentctl.py "$SOCK" ai.snapshot
+python3 tools/agentctl.py "$SOCK" ai.log
+python3 tools/agentctl.py "$SOCK" ai.replay
+```
+
+Thin actor harness verbs:
+
+```bash
+python3 tools/agentctl.py "$SOCK" agent.actor.list
+python3 tools/agentctl.py "$SOCK" agent.actor.observe squad
+python3 tools/agentctl.py "$SOCK" agent.actor.wake squad
+python3 tools/agentctl.py "$SOCK" agent.actor.observe mutant_pack
+python3 tools/agentctl.py "$SOCK" agent.actor.wake mutant_pack
+python3 tools/agentctl.py "$SOCK" agent.actor.commands
+```
+
+Live-session mutant pack verbs:
+
+```bash
+python3 tools/agentctl.py "$SOCK" agent.pack.spawn "dog_weak 3 8"
+python3 tools/agentctl.py "$SOCK" agent.pack.list
+python3 tools/agentctl.py "$SOCK" agent.pack.observe 1
+python3 tools/agentctl.py "$SOCK" agent.pack.wake 1
+python3 tools/agentctl.py "$SOCK" agent.pack.commands
+```
+
+The first pack slice is intentionally small: spawn real game objects near the actor, register them as one `MutantPackAgent`, observe the agent packet, wake it through deterministic or provider-backed intent, and expose accepted commands for verification. Full ALife group ownership comes after this path is stable.
+
+## LLM Provider Configuration
+
+The deterministic/null provider is enough for unit tests and bridge smoke tests. Live Anthropic calls are configured through environment variables:
+
+```bash
+export XRAY_AGENT_PROVIDER=anthropic
+export XRAY_AGENT_MODEL=claude-sonnet-5
+export XRAY_AGENT_API_KEY=...
+export XRAY_AGENT_TIMEOUT_MS=5000
+```
+
+`ANTHROPIC_API_KEY` is also accepted as a fallback key variable.
+
+The CMake option is on by default:
+
+```bash
+cmake -B build -DXRAY_AGENT_HTTP=ON ...
+```
+
+If libcurl is unavailable, live provider wakes return a normal coast value such as `network_adapter_not_linked`. Missing API keys return `missing_api_key`. These are not fatal engine errors.
+
+## Tests and Verification
+
+Build the engine:
+
+```bash
+cmake --build build -j10
+```
+
+Build and run the xrSim test binary:
+
+```bash
+cmake --build build --target xrSimWorldStateTests -j10
+bin/arm64/Release/xrSimWorldStateTests
+```
+
+Run the AI thin-harness bridge script in a live engine session:
+
+```bash
+python3 tools/agentctl.py "$SOCK" --script tools/ai_thin_harness_smoke.txt
+```
+
+Run the GL macOS soak wrapper:
+
+```bash
+python3 tools/gl_macos_soak.py \
+  --scenario tools/gl_load_play_save_load.txt \
+  --artifacts artifacts/gl_macos_soak/load_play_save_load
+```
+
+Useful log scan:
+
+```bash
+rg -n "FATAL|SCRIPT RUNTIME ERROR|lua_pcall_failed|invalid agent response|transport_error|agent.pack" \
+  /path/to/game/appdata/logs
+```
+
+## macOS Constraint: No Exceptions Through LuaJIT
+
+On Darwin, `XRAY_EXCEPTIONS=0` is intentional.
+
+C++ exceptions cannot safely propagate through LuaJIT's ARM64 trampoline. In this repo, X-Ray-style `THROW` paths compile down to fatal verification instead of exception unwinding. New runtime code must return value errors, not throw across engine/script/provider boundaries.
+
+This matters especially for AI and bridge code: invalid model output, bad spawn payloads, missing sections, missing API keys, transport failure, and timeout must all be reportable values.
+
+## Known Runtime Notes
+
+- Do not use `-nosound` for current Call of Chernobyl verification. Some CoC scripts expect sound-theme state to exist.
+- CoC can hit a `sound_theme.script` nil `played_id` bug during campfire sound updates. A local game-data guard may be needed while testing live sessions.
+- macOS OpenGL is capped at 4.1 and deprecated. Shadow, DDS, and driver quirks are expected until native renderers replace it.
+- Some CoC startup warnings are mod script issues, not engine regressions.
+
+## Repository Layout
+
+```text
 src/
+  xr_3da/                Main executable entry point
+  xrCore/                Platform abstractions, filesystem, threading, debug
+  xrEngine/              Core engine, SDL2, input, console, AgentBridge
+  xrEngine/xrSim/        Thin AI simulation harness and provider bridge
+  xrGame/                Game logic, ALife, Lua bindings, live object spawning
+  xrSound/               OpenAL sound layer
   Layers/
-    xrRenderGL/         # OpenGL backend (current macOS renderer)
-    xrRenderDX11/       # DirectX 11 backend (Windows)
-    xrRender/           # Shared render code (all backends)
-  xrEngine/             # Core engine — SDL2 windowing, input
-  xrCore/               # Platform abstractions, file I/O, threading
-  xrGame/               # Game logic, ALife simulation, Lua scripting
-  xrSound/              # Audio (OpenAL)
-  xr_3da/               # Main executable entry point
+    xrRenderPC_GL/       Working OpenGL renderer module
+    xrRenderGL/          OpenGL hardware abstraction
+    xrRenderMetal/       Metal HAL bring-up work
+    xrRenderPC_Metal/    Metal module, parked until first-frame gates
+    xrRender/            Shared renderer code
+    xrRender_R2/         Shared render phases and CRender logic
+
+tools/
+  agentctl.py            Agent bridge client
+  bridge_soak.txt        Bridge regression script
+  ai_zone_smoke.txt      xrSim world-state smoke script
+  ai_thin_harness_smoke.txt
+  gl_macos_soak.py       Launch/control/log/screenshot soak wrapper
+
 docs/
-  macos-dev-setup.md    # macOS build and run guide
-  superpowers/
-    specs/              # Design specifications (Metal renderer, etc.)
-    plans/              # Implementation plans
-    CONTINUATION.md     # Full roadmap and resume guide
+  HANDOVER.md
+  macos-dev-setup.md
+  superpowers/specs/     Current architecture specs
+  superpowers/plans/     Implementation plans and task slices
 ```
+
+## Important Docs
+
+- [docs/HANDOVER.md](docs/HANDOVER.md) - current project handover and resume guide.
+- [docs/macos-dev-setup.md](docs/macos-dev-setup.md) - macOS build/run/bridge setup.
+- [docs/superpowers/specs/2026-07-05-engine-roadmap-v2.md](docs/superpowers/specs/2026-07-05-engine-roadmap-v2.md) - renderer and engine roadmap.
+- [docs/superpowers/specs/2026-07-05-agentic-zone-design.md](docs/superpowers/specs/2026-07-05-agentic-zone-design.md) - agentic Zone architecture.
+- [docs/superpowers/specs/2026-07-07-llm-thin-harness-ai-design.md](docs/superpowers/specs/2026-07-07-llm-thin-harness-ai-design.md) - current in-game AI authority boundary.
+- [docs/superpowers/specs/2026-07-08-mutant-pack-session-spawn-design.md](docs/superpowers/specs/2026-07-08-mutant-pack-session-spawn-design.md) - first live-spawn mutant pack slice.
 
 ## Credits
 
-Built on the work of the [OpenXRay team](https://github.com/OpenXRay/xray-16) and the S.T.A.L.K.E.R. modding community. Special thanks to **vertver** and **Lnd-stoL** for the original macOS support in OpenXRay.
+OpenXVibeRay is built on the work of the [OpenXRay team](https://github.com/OpenXRay/xray-16), the S.T.A.L.K.E.R. modding community, and earlier macOS support work by OpenXRay contributors including vertver and Lnd-stoL.
 
-AI-assisted development powered by [Claude Code](https://claude.ai/code) (Anthropic).
+Development is done through human-AI collaboration with coding agents. The point is not to replace engineers; it is to make a large, old, real engine easier to understand, test, and evolve.
 
----
-
-*Fan project. Not affiliated with GSC Game World. Follow the official [EULA](https://www.gsc-game.com/eula/) and [Fan Content Guidelines](https://www.gsc-game.com/guidelines/).*
+Fan project. Not affiliated with GSC Game World. Follow the official [EULA](https://www.gsc-game.com/eula/) and [Fan Content Guidelines](https://www.gsc-game.com/guidelines/).
