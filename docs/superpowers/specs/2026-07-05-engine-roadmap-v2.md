@@ -1,5 +1,7 @@
 # OpenXVibeRay — Engine Roadmap v2 (Plan of Record)
 
+> **2026-10-09 amendment (proposed, pending rz confirmation):** V1 = GL runtime + agentic Zone; dual-native renderers move to V2. See `2026-10-09-reanimation-plan.md`.
+
 **Date:** 2026-07-05 (rev. 2: dual-native renderer decision, same day)
 **Status:** THE plan of record. Supersedes `2026-07-04-engine-v2-roadmap.md` (now an index with a banner). Produced by a 4-reviewer implementation/consistency audit after the day's pivots; all P0/P1 findings are resolved in this document or in the accompanying commits.
 **Child specs (authoritative for their domain):**
