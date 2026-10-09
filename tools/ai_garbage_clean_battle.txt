@@ -1,0 +1,55 @@
+# Canonical Garbage debug location battle: empty location without default mobs, godmode, flying around, LLM-managed mutant & stalker packs in real time
+hello
+state
+sleep 5
+cmd start server(radik zagirov - to garbage/single/alife/load) client(localhost)
+sleep 40
+key space tap
+sleep 3
+key escape tap
+state
+key s down
+sleep 3
+key s up
+key escape tap
+cmd g_god on
+cmd g_unlimitedammo on
+lua for id=1,65534 do local o=alife():object(id) if o and o.id~=db.actor:id() and (IsStalker(o) or IsMonster(o)) then alife():release(o, true) end end
+sleep 1
+lua local count=0 for id=1,65534 do local o=alife():object(id) if o and o.id~=db.actor:id() and (IsStalker(o) or IsMonster(o)) then count=count+1 end end return count
+agent.provider live
+agent.pack.spawn dog_weak 4 8
+agent.pack.spawn dog_weak 2 10
+agent.pack.spawn sim_default_stalker_0 3 12
+agent.pack.spawn sim_default_bandit_0 3 14
+agent.pack.list
+agent.pack.observe 1
+agent.pack.observe 2
+agent.pack.observe 3
+agent.pack.observe 4
+agent.pack.wake 1 live
+agent.pack.wake 2 live
+agent.pack.wake 3 live
+agent.pack.wake 4 live
+sleep 1.2
+agent.actor.poll 1
+agent.actor.poll 2
+agent.actor.poll 3
+agent.actor.poll 4
+shot debug_garbage_open_ground
+cmd g_no_clip
+key space down
+sleep 2
+key space up
+key w down
+sleep 2
+key w up
+mouse move 250 -40
+shot debug_garbage_aerial_pan
+mouse move -400 0
+key w down
+sleep 2
+key w up
+shot debug_garbage_aerial_battlefield
+sleep 1
+cmd quit

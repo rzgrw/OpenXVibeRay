@@ -199,30 +199,23 @@ for (int rad=0; rad < RINGS; rad++)
 #endif // SSAO_OPT_DATA
 		float3 	direct 	= tap_pos-P.xyz;
 		float	dist	= length(direct);
-				direct 	= normalize(direct);
-
-
-		float 	infl 	= saturate(dot( direct, N.xyz));
-		float 	occ_factor = saturate(dist);
-//		float	range_att = 1/(occ_factor+0.1);
-		float	range_att = saturate(1-dist*0.5);
+		if (dist > 0.001)
 		{
-//			occ += lerp( 1, occ_factor, infl);
-//			num_dir += 1;		
+			direct 	/= dist;
+			float 	infl 	= saturate(dot( direct, N.xyz));
+			float 	occ_factor = saturate(dist);
+			float	range_att = saturate(1.0 - dist*0.5);
 
-			occ += (infl+0.01)*lerp( 1, occ_factor, infl)*range_att;
+			occ += (infl+0.01)*lerp( 1.0, occ_factor, infl)*range_att;
 			num_dir += (infl+0.01)*range_att;
-
-//			occ += (infl+0.1)*lerp( 1, occ_factor, infl)*range_att;
-//			num_dir += (infl+0.1)*range_att;
-
-//			occ += (infl+0.1)*lerp( 1, occ_factor, infl);
-//			num_dir += (infl+0.1);
 		}
 
 	}
 }
-	occ /= num_dir;
+	if (num_dir > 0.0001)
+		occ /= num_dir;
+	else
+		occ = 1.0;
 /**/
 
 //	occ = lerp(1, occ, saturate(point_depth/1.5));

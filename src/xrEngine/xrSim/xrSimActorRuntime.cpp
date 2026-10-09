@@ -32,6 +32,21 @@ ActorProviderResult DeterministicActorIntentProvider::Wake(const ActorWakeContex
             "end\n");
     }
 
+    if (context.actor.name.find("duty") != std::string::npos ||
+        context.actor.memorySummary.find("duty") != std::string::npos)
+    {
+        return ParseProviderText("deterministic-actor", "duty-doctrine",
+            "xrsim_actor_intent_v1\n"
+            "goal purge_mutants_at_location\n"
+            "stance combat_patrol\n"
+            "duration_ms 5000\n"
+            "action move_to mutant_hotspot\n"
+            "action fire_pattern target_mutants burst_long\n"
+            "action vocalize contact_mutant_destroy\n"
+            "memory duty_order_eliminate_all_mutants\n"
+            "end\n");
+    }
+
     return ParseProviderText("deterministic-actor", "fixture",
         "xrsim_actor_intent_v1\n"
         "goal survive_and_delay_player\n"

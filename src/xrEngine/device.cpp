@@ -8,6 +8,7 @@
 #include "XR_IOConsole.h"
 #include "xr_input.h"
 #include "AgentBridge.h"
+#include "AgentZoneRuntime.h"
 
 #include "IGame_Level.h"
 #include "IGame_Persistent.h"
@@ -269,6 +270,8 @@ void CRenderDevice::ProcessFrame()
     const u64 frameStartTime = TimerGlobal.GetElapsed_ms();
 
     FrameMove();
+
+    CAgentZoneRuntime::OnFrame();
 
     if (g_agent_bridge)
         g_agent_bridge->OnFrame();

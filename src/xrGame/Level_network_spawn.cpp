@@ -191,6 +191,54 @@ bool CLevel::AgentBridgeSpawnObjectNearCurrentEntity(
     }
 
     id = spawned->ID;
+
+    if (strstr(section, "stalker") || strstr(section, "duty") || strstr(section, "bandit") ||
+        strstr(section, "monolith") || strstr(section, "soldier") || strstr(section, "freedom"))
+    {
+        pcstr weaponSect = "wpn_abakan";
+        pcstr ammoSect = "ammo_5.45x39_fmj";
+        if (strstr(section, "duty"))
+        {
+            weaponSect = "wpn_groza";
+            ammoSect = "ammo_9x39_pab9";
+        }
+        else if (strstr(section, "bandit"))
+        {
+            weaponSect = "wpn_ak74u";
+            ammoSect = "ammo_5.45x39_fmj";
+        }
+        else if (strstr(section, "monolith"))
+        {
+            weaponSect = "wpn_val";
+            ammoSect = "ammo_9x39_pab9";
+        }
+
+        auto spawnChild = [&](pcstr itemSect) {
+            CSE_Abstract* item = F_entity_Create(itemSect, true);
+            if (item)
+            {
+                item->s_name = itemSect;
+                item->set_name_replace(itemSect);
+                item->ID = 0xffff;
+                item->ID_Parent = id;
+                item->ID_Phantom = 0xffff;
+                item->s_flags.assign(M_SPAWN_OBJECT_LOCAL);
+                item->RespawnTime = 0;
+                NET_Packet itemP;
+                item->Spawn_Write(itemP, TRUE);
+                F_entity_Destroy(item);
+                u16 m = 0;
+                itemP.r_begin(m);
+                Server->Process_spawn(itemP, clientID);
+            }
+        };
+
+        spawnChild(weaponSect);
+        spawnChild(ammoSect);
+        spawnChild(ammoSect);
+        spawnChild(ammoSect);
+    }
+
     return true;
 }
 

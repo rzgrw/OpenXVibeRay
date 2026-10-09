@@ -20,6 +20,8 @@ add_library(xrSimCore STATIC
     xrSim/xrSimAgentProvider.h
     xrSim/xrSimAnthropicTransport.cpp
     xrSim/xrSimAnthropicTransport.h
+    xrSim/xrSimGeminiTransport.cpp
+    xrSim/xrSimGeminiTransport.h
     xrSim/xrSimBridge.cpp
     xrSim/xrSimBridge.h
     xrSim/xrSimNullAgent.cpp
@@ -28,6 +30,28 @@ add_library(xrSimCore STATIC
     xrSim/xrSimPackSpawn.h
     xrSim/xrSimWorldState.cpp
     xrSim/xrSimWorldState.h
+    xrSim/xrSimZoneManifest.cpp
+    xrSim/xrSimZoneManifest.h
+    xrSim/xrSimZoneState.cpp
+    xrSim/xrSimZoneState.h
+    xrSim/xrSimAuthority.cpp
+    xrSim/xrSimAuthority.h
+    xrSim/xrSimIntentEnvelope.cpp
+    xrSim/xrSimIntentEnvelope.h
+    xrSim/xrSimIntentCommit.cpp
+    xrSim/xrSimIntentCommit.h
+    xrSim/xrSimDecisionLedger.cpp
+    xrSim/xrSimDecisionLedger.h
+    xrSim/xrSimWorldAgents.cpp
+    xrSim/xrSimWorldAgents.h
+    xrSim/xrSimWorldProvider.cpp
+    xrSim/xrSimWorldProvider.h
+    xrSim/xrSimWakeScheduler.cpp
+    xrSim/xrSimWakeScheduler.h
+    xrSim/xrSimMaterialization.cpp
+    xrSim/xrSimMaterialization.h
+    xrSim/xrSimZoneRuntime.cpp
+    xrSim/xrSimZoneRuntime.h
 )
 
 target_include_directories(xrSimCore
@@ -56,6 +80,21 @@ target_include_directories(xrSimWorldStateTests
 )
 
 target_link_libraries(xrSimWorldStateTests
+    PRIVATE
+    xrSimCore
+)
+
+add_executable(xrSimAuthoritySpineTests EXCLUDE_FROM_ALL
+    xrSim/tests/xrSimAuthoritySpineTests.cpp
+)
+
+target_include_directories(xrSimAuthoritySpineTests
+    PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_SOURCE_DIR}/src"
+)
+
+target_link_libraries(xrSimAuthoritySpineTests
     PRIVATE
     xrSimCore
 )
@@ -365,6 +404,8 @@ target_sources_grouped(
     FILES
     AgentBridge.cpp
     AgentBridge.h
+    AgentZoneRuntime.cpp
+    AgentZoneRuntime.h
     device.cpp
     device.h
     Device_create.cpp
@@ -470,9 +511,11 @@ target_sources(xrEngine
 )
 
 target_include_directories(xrEngine
-    PRIVATE
+    PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_SOURCE_DIR}/src"
+
+    PRIVATE
     "${CMAKE_SOURCE_DIR}/Externals/imgui"
     "${CMAKE_SOURCE_DIR}/Externals/OpenAutomate/inc"
 )

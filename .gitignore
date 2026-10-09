@@ -27,3 +27,7 @@ __pycache__/
 
 # exclude doxygen output
 doc/doxygen/html/*
+
+# local-only
+ixray/
+.claude/settings.local.json

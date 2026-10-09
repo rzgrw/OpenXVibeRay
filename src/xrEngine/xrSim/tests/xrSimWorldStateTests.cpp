@@ -1,5 +1,6 @@
 #include "xrSim/xrSimAgentProvider.h"
 #include "xrSim/xrSimAnthropicTransport.h"
+#include "xrSim/xrSimGeminiTransport.h"
 #include "xrSim/xrSimActuator.h"
 #include "xrSim/xrSimActorIntent.h"
 #include "xrSim/xrSimActorProvider.h"
@@ -39,6 +40,28 @@ public:
     std::string seenModel;
     std::string seenPath;
     std::string seenBody;
+    uint32_t calls = 0;
+};
+
+class FakeGeminiTransport : public xrSim::IGeminiTransport
+{
+public:
+    xrSim::GeminiTransportResult Send(
+        const xrSim::AgentProviderConfig& config, const xrSim::GeminiGenerateContentRequest& request) override
+    {
+        seenModel = config.model;
+        seenPath = request.path;
+        seenBody = request.body;
+        seenApiKey = config.apiKey;
+        ++calls;
+        return result;
+    }
+
+    xrSim::GeminiTransportResult result;
+    std::string seenModel;
+    std::string seenPath;
+    std::string seenBody;
+    std::string seenApiKey;
     uint32_t calls = 0;
 };
 
@@ -916,6 +939,366 @@ bool TestAnthropicActorProviderCoastsOnTransportFailure()
     ok = Expect(result.coast, "anthropic actor transport failure marks coast") && ok;
     ok = Expect(result.coastReason == "transport_error", "anthropic actor transport failure explains coast") && ok;
     ok = Expect(result.error == "timeout", "anthropic actor transport failure preserves detail") && ok;
+    return ok;
+}
+
+bool TestGeminiProviderConfigDefaultsToFlash()
+{
+    std::vector<xrSim::AgentConfigVar> vars;
+    vars.push_back(xrSim::AgentConfigVar{ "XRAY_AGENT_PROVIDER", "gemini" });
+
+    const xrSim::AgentProviderConfig config = xrSim::BuildAgentProviderConfig(vars);
+    bool ok = Expect(config.enabled, "gemini provider config enabled");
+    ok = Expect(config.provider == "gemini", "gemini provider name") && ok;
+    ok = Expect(config.model == "gemini-3.8-flash", "gemini provider defaults to gemini-3.8-flash") && ok;
+
+    std::vector<xrSim::AgentConfigVar> modelVars;
+    modelVars.push_back(xrSim::AgentConfigVar{ "XRAY_AGENT_MODEL", "gemini-3.8-flash" });
+    const xrSim::AgentProviderConfig inferredConfig = xrSim::BuildAgentProviderConfig(modelVars);
+    ok = Expect(inferredConfig.provider == "gemini", "gemini model name infers provider") && ok;
+    ok = Expect(inferredConfig.model == "gemini-3.8-flash", "gemini model preserved") && ok;
+
+    std::vector<xrSim::AgentConfigVar> keyVars;
+    keyVars.push_back(xrSim::AgentConfigVar{ "XRAY_AGENT_PROVIDER", "gemini" });
+    keyVars.push_back(xrSim::AgentConfigVar{ "GEMINI_API_KEY", "gemini-key-123" });
+    const xrSim::AgentProviderConfig keyConfig = xrSim::BuildAgentProviderConfig(keyVars);
+    ok = Expect(keyConfig.apiKey == "gemini-key-123", "gemini config reads GEMINI_API_KEY") && ok;
+
+    std::vector<xrSim::AgentConfigVar> genericKeyVars;
+    genericKeyVars.push_back(xrSim::AgentConfigVar{ "XRAY_AGENT_PROVIDER", "gemini" });
+    genericKeyVars.push_back(xrSim::AgentConfigVar{ "XRAY_AGENT_API_KEY", "generic-key-456" });
+    genericKeyVars.push_back(xrSim::AgentConfigVar{ "GEMINI_API_KEY", "gemini-key-123" });
+    const xrSim::AgentProviderConfig genericKeyConfig = xrSim::BuildAgentProviderConfig(genericKeyVars);
+    ok = Expect(genericKeyConfig.apiKey == "generic-key-456", "XRAY_AGENT_API_KEY takes precedence for gemini") && ok;
+
+    return ok;
+}
+
+bool TestGeminiGenerateContentRequestBuilder()
+{
+    xrSim::AgentProviderConfig config;
+    config.provider = "gemini";
+    config.model = "gemini-3.8-flash";
+    config.apiKey = "secret";
+
+    const xrSim::GeminiGenerateContentRequest request =
+        xrSim::BuildGeminiGenerateContentRequestForPrompt(config, "test_prompt", 1024);
+
+    bool ok = Expect(request.method == "POST", "gemini request uses POST");
+    ok = Expect(request.path == "/v1beta/models/gemini-3.8-flash:generateContent", "gemini request uses generateContent path") && ok;
+    ok = Expect(request.contentType == "application/json", "gemini request uses json content type") && ok;
+    ok = Expect(request.body.find("\"contents\"") != std::string::npos, "gemini request body has contents") && ok;
+    ok = Expect(request.body.find("\"role\":\"user\"") != std::string::npos, "gemini request body has user role") && ok;
+    ok = Expect(request.body.find("\"parts\":[{\"text\":\"test_prompt\"}]") != std::string::npos, "gemini request body has text part") && ok;
+    ok = Expect(request.body.find("\"maxOutputTokens\":1024") != std::string::npos, "gemini request body has maxOutputTokens") && ok;
+    return ok;
+}
+
+bool TestGeminiJsonDecoderParsesStandardResponse()
+{
+    const std::string json =
+        "{\n"
+        "  \"candidates\": [\n"
+        "    {\n"
+        "      \"content\": {\n"
+        "        \"parts\": [\n"
+        "          {\n"
+        "            \"text\": \"xrsim_agent_response_v1\\nagent_id 1\\ngame_day 0\\nintent adjust_population debug_region blind_dog 4\\nend\\n\"\n"
+        "          }\n"
+        "        ],\n"
+        "        \"role\": \"model\"\n"
+        "      },\n"
+        "      \"finishReason\": \"STOP\"\n"
+        "    }\n"
+        "  ]\n"
+        "}";
+
+    const xrSim::GeminiTextResult decoded = xrSim::DecodeGeminiGenerateContentText(json);
+    bool ok = Expect(decoded.ok, "decode gemini text succeeds");
+    ok = Expect(decoded.text.find("xrsim_agent_response_v1") != std::string::npos, "decoded text has agent response") && ok;
+
+    const xrSim::AgentProviderResult parsed =
+        xrSim::ParseGeminiGenerateContentTextResponse(json, "gemini", "gemini-3.8-flash");
+    ok = Expect(parsed.ok, "parse gemini response succeeds") && ok;
+    ok = Expect(parsed.provider == "gemini", "parsed provider matches") && ok;
+    ok = Expect(parsed.model == "gemini-3.8-flash", "parsed model matches") && ok;
+    ok = Expect(parsed.intents.size() == 1, "parsed intents has 1 entry") && ok;
+    if (parsed.intents.size() == 1)
+    {
+        ok = Expect(parsed.intents[0].delta == 4, "parsed intent delta is 4") && ok;
+        ok = Expect(parsed.intents[0].species == "blind_dog", "parsed intent species matches") && ok;
+    }
+    return ok;
+}
+
+bool TestGeminiJsonDecoderSkipsThoughtParts()
+{
+    const std::string json =
+        "{\n"
+        "  \"candidates\": [\n"
+        "    {\n"
+        "      \"content\": {\n"
+        "        \"parts\": [\n"
+        "          {\n"
+        "            \"thought\": true,\n"
+        "            \"text\": \"I should analyze the zone population carefully...\"\n"
+        "          },\n"
+        "          {\n"
+        "            \"text\": \"xrsim_agent_response_v1\\nagent_id 1\\ngame_day 0\\nintent adjust_population debug_region blind_dog 2\\nend\\n\"\n"
+        "          }\n"
+        "        ],\n"
+        "        \"role\": \"model\"\n"
+        "      },\n"
+        "      \"finishReason\": \"STOP\"\n"
+        "    }\n"
+        "  ]\n"
+        "}";
+
+    const xrSim::GeminiTextResult decoded = xrSim::DecodeGeminiGenerateContentText(json);
+    bool ok = Expect(decoded.ok, "decode gemini text with thoughts succeeds");
+    ok = Expect(decoded.text.find("I should analyze") == std::string::npos, "thought text is excluded from response") && ok;
+    ok = Expect(decoded.text.find("xrsim_agent_response_v1") != std::string::npos, "actual content is present") && ok;
+
+    const xrSim::AgentProviderResult parsed =
+        xrSim::ParseGeminiGenerateContentTextResponse(json, "gemini", "gemini-3.8-flash");
+    ok = Expect(parsed.ok, "parse gemini response with thoughts succeeds") && ok;
+    ok = Expect(parsed.intents.size() == 1, "parsed intents has 1 entry") && ok;
+    if (parsed.intents.size() == 1)
+        ok = Expect(parsed.intents[0].delta == 2, "parsed intent delta is 2") && ok;
+    return ok;
+}
+
+bool TestGeminiJsonDecoderSurfacesError()
+{
+    const std::string json =
+        "{\n"
+        "  \"error\": {\n"
+        "    \"code\": 400,\n"
+        "    \"message\": \"API key not valid. Please pass a valid API key.\",\n"
+        "    \"status\": \"INVALID_ARGUMENT\"\n"
+        "  }\n"
+        "}";
+
+    const xrSim::GeminiTextResult decoded = xrSim::DecodeGeminiGenerateContentText(json);
+    bool ok = Expect(!decoded.ok, "decode gemini error fails ok flag");
+    ok = Expect(decoded.error.find("API key not valid") != std::string::npos, "error message extracted from json") && ok;
+    return ok;
+}
+
+bool TestGeminiProviderShellUsesInjectedTransport()
+{
+    xrSim::AgentProviderConfig config;
+    config.provider = "gemini";
+    config.model = "gemini-3.8-flash";
+    config.apiKey = "secret-gemini";
+
+    FakeGeminiTransport transport;
+    transport.result.ok = true;
+    transport.result.status = 200;
+    transport.result.latencyMs = 35;
+    transport.result.body =
+        "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"xrsim_agent_response_v1\\n"
+        "intent adjust_population debug_region blind_dog 3\\nend\\n\"}]}}]}";
+
+    xrSim::GeminiAgentProviderShell provider(config);
+    provider.SetTransport(&transport);
+
+    xrSim::AgentWakeContext context;
+    context.agentId = 1;
+    context.gameDay = 2;
+    context.observation = "regions=1 species=1 cohorts=1 log=0 pop{debug_region:blind_dog=50}";
+
+    const xrSim::AgentProviderResult result = provider.Wake(context);
+    bool ok = Expect(result.ok, "gemini shell accepts injected transport response");
+    ok = Expect(!result.coast, "gemini shell transport response is not coast") && ok;
+    ok = Expect(result.provider == "gemini", "gemini shell preserves provider") && ok;
+    ok = Expect(result.model == "gemini-3.8-flash", "gemini shell preserves model") && ok;
+    ok = Expect(result.intents.size() == 1, "gemini shell transport emits one intent") && ok;
+    if (result.intents.size() == 1)
+        ok = Expect(result.intents[0].delta == 3, "gemini shell transport preserves delta") && ok;
+    ok = Expect(transport.calls == 1, "gemini shell calls injected transport once") && ok;
+    ok = Expect(transport.seenModel == "gemini-3.8-flash", "gemini shell transport sees model") && ok;
+    ok = Expect(transport.seenApiKey == "secret-gemini", "gemini shell transport sees api key") && ok;
+    ok = Expect(transport.seenPath == "/v1beta/models/gemini-3.8-flash:generateContent", "gemini shell transport sees path") && ok;
+    return ok;
+}
+
+bool TestGeminiProviderShellCoastsOnTransportFailure()
+{
+    xrSim::AgentProviderConfig config;
+    config.provider = "gemini";
+    config.model = "gemini-3.8-flash";
+    config.apiKey = "secret-gemini";
+
+    FakeGeminiTransport transport;
+    transport.result.ok = false;
+    transport.result.error = "curl timeout";
+
+    xrSim::GeminiAgentProviderShell provider(config);
+    provider.SetTransport(&transport);
+
+    xrSim::AgentWakeContext context;
+    context.agentId = 1;
+
+    const xrSim::AgentProviderResult result = provider.Wake(context);
+    bool ok = Expect(result.ok, "gemini shell transport failure succeeds as coast");
+    ok = Expect(result.coast, "gemini shell transport failure marks coast") && ok;
+    ok = Expect(result.coastReason == "transport_error", "gemini shell transport failure records coast reason") && ok;
+    ok = Expect(result.error == "curl timeout", "gemini shell transport failure keeps error detail") && ok;
+    return ok;
+}
+
+bool TestGeminiActorProviderParsesInjectedTransportIntent()
+{
+    xrSim::AgentProviderConfig config;
+    config.provider = "gemini";
+    config.model = "gemini-3.8-flash";
+    config.apiKey = "secret-gemini";
+
+    FakeGeminiTransport transport;
+    transport.result.ok = true;
+    transport.result.status = 200;
+    transport.result.body =
+        "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"xrsim_actor_intent_v1\\n"
+        "goal scout_anomalies_flash\\n"
+        "stance cautious\\n"
+        "duration_ms 3000\\n"
+        "action patrol anomaly_route stealth\\n"
+        "end\\n\"}]}}]}";
+
+    xrSim::GeminiActorIntentProvider provider(config);
+    provider.SetTransport(&transport);
+
+    xrSim::ActorWakeContext context;
+    context.actor = xrSim::MakeDebugMutantPackAgent();
+    context.observation = "agent_id 201\nscope MUTANT_PACK\n";
+    context.prompt = "xrsim_actor_wake_v1\nagent_id 201\nreturn xrsim_actor_intent_v1\nend\n";
+
+    const xrSim::ActorProviderResult result = provider.Wake(context);
+    bool ok = Expect(result.ok, "gemini actor provider accepts injected transport response");
+    ok = Expect(!result.coast, "gemini actor provider response is not coast") && ok;
+    ok = Expect(result.provider == "gemini", "gemini actor provider stamps provider") && ok;
+    ok = Expect(result.model == "gemini-3.8-flash", "gemini actor provider stamps model") && ok;
+    ok = Expect(result.plan.goal == "scout_anomalies_flash", "gemini actor provider parses goal") && ok;
+    ok = Expect(result.plan.actions.size() == 1, "gemini actor provider parses one action") && ok;
+    if (result.plan.actions.size() == 1)
+    {
+        ok = Expect(result.plan.actions[0].verb == "patrol", "gemini actor provider parses patrol action") && ok;
+        ok = Expect(result.plan.actions[0].target == "anomaly_route", "gemini actor provider parses target") && ok;
+    }
+    ok = Expect(transport.calls == 1, "gemini actor provider calls injected transport once") && ok;
+    ok = Expect(transport.seenPath == "/v1beta/models/gemini-3.8-flash:generateContent", "gemini actor provider uses generateContent path") && ok;
+    return ok;
+}
+
+bool TestGeminiActorProviderCoastsWithoutApiKey()
+{
+    xrSim::AgentProviderConfig config;
+    config.provider = "gemini";
+    config.model = "gemini-3.8-flash";
+
+    FakeGeminiTransport transport;
+    xrSim::GeminiActorIntentProvider provider(config);
+    provider.SetTransport(&transport);
+
+    xrSim::ActorWakeContext context;
+    context.actor = xrSim::MakeDebugSquadAgent();
+    context.prompt = "xrsim_actor_wake_v1\nend\n";
+
+    const xrSim::ActorProviderResult result = provider.Wake(context);
+    bool ok = Expect(result.ok, "gemini actor missing key succeeds as coast");
+    ok = Expect(result.coast, "gemini actor missing key marks coast") && ok;
+    ok = Expect(result.coastReason == "missing_api_key", "gemini actor missing key explains coast") && ok;
+    ok = Expect(transport.calls == 0, "gemini actor missing key skips transport") && ok;
+    return ok;
+}
+
+bool TestGeminiActorProviderCoastsOnTransportFailure()
+{
+    xrSim::AgentProviderConfig config;
+    config.provider = "gemini";
+    config.model = "gemini-3.8-flash";
+    config.apiKey = "secret";
+
+    FakeGeminiTransport transport;
+    transport.result.ok = false;
+    transport.result.error = "connection refused";
+
+    xrSim::GeminiActorIntentProvider provider(config);
+    provider.SetTransport(&transport);
+
+    xrSim::ActorWakeContext context;
+    context.actor = xrSim::MakeDebugSquadAgent();
+    context.prompt = "xrsim_actor_wake_v1\nend\n";
+
+    const xrSim::ActorProviderResult result = provider.Wake(context);
+    bool ok = Expect(result.ok, "gemini actor transport failure succeeds as coast");
+    ok = Expect(result.coast, "gemini actor transport failure marks coast") && ok;
+    ok = Expect(result.coastReason == "transport_error", "gemini actor transport failure explains coast") && ok;
+    ok = Expect(result.error == "connection refused", "gemini actor transport failure preserves detail") && ok;
+    return ok;
+}
+
+bool TestGeminiHttpTransportFactoryMatchesAvailability()
+{
+    const std::unique_ptr<xrSim::IGeminiTransport> transport = xrSim::CreateGeminiHttpTransport();
+    const bool available = xrSim::IsGeminiHttpTransportAvailable();
+    const std::string description = xrSim::DescribeGeminiHttpTransport();
+
+    bool ok = true;
+    if (available)
+    {
+        ok = Expect(transport != nullptr, "available gemini transport creates instance");
+        ok = Expect(description == "curl", "available gemini transport describes curl") && ok;
+    }
+    else
+    {
+        ok = Expect(transport == nullptr, "unavailable gemini transport yields null");
+        ok = Expect(description == "unavailable", "unavailable gemini transport describes unavailable") && ok;
+    }
+    return ok;
+}
+
+bool TestAsyncActorProviderQueueRunsGeminiActorWake()
+{
+    xrSim::AgentProviderConfig config;
+    config.provider = "gemini";
+    config.model = "gemini-3.8-flash";
+    config.apiKey = "secret";
+
+    auto fakeTransport = std::make_unique<FakeGeminiTransport>();
+    fakeTransport->result.ok = true;
+    fakeTransport->result.status = 200;
+    fakeTransport->result.body =
+        "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"xrsim_actor_intent_v1\\n"
+        "goal gemini_async_goal\\naction stalk target_player\\nend\\n\"}]}}]}";
+
+    auto provider = std::make_unique<xrSim::GeminiActorIntentProvider>(config);
+    provider->SetOwnedTransport(std::move(fakeTransport));
+
+    xrSim::AsyncActorProviderQueue queue(std::move(provider));
+
+    xrSim::ActorWakeContext context;
+    context.actor = xrSim::MakeDebugMutantPackAgent();
+    context.prompt = "xrsim_actor_wake_v1\nend\n";
+
+    const xrSim::ActorWakeSubmitResult submitted = queue.Submit(context);
+    bool ok = Expect(submitted.ok, "async gemini queue accepts submit");
+
+    xrSim::ActorWakePollResult polled;
+    for (uint32_t attempt = 0; attempt < 100; ++attempt)
+    {
+        polled = queue.Poll(submitted.requestId);
+        if (polled.ready || !polled.ok)
+            break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+
+    ok = Expect(polled.ok, "async gemini poll succeeds") && ok;
+    ok = Expect(polled.ready, "async gemini poll is ready") && ok;
+    ok = Expect(polled.providerResult.provider == "gemini", "async gemini stamps provider") && ok;
+    ok = Expect(polled.providerResult.model == "gemini-3.8-flash", "async gemini stamps model") && ok;
+    ok = Expect(polled.providerResult.plan.goal == "gemini_async_goal", "async gemini parses plan goal") && ok;
     return ok;
 }
 
@@ -2048,6 +2431,18 @@ int main()
     ok = TestAnthropicActorProviderParsesInjectedTransportIntent() && ok;
     ok = TestAnthropicActorProviderCoastsWithoutApiKey() && ok;
     ok = TestAnthropicActorProviderCoastsOnTransportFailure() && ok;
+    ok = TestGeminiProviderConfigDefaultsToFlash() && ok;
+    ok = TestGeminiGenerateContentRequestBuilder() && ok;
+    ok = TestGeminiJsonDecoderParsesStandardResponse() && ok;
+    ok = TestGeminiJsonDecoderSkipsThoughtParts() && ok;
+    ok = TestGeminiJsonDecoderSurfacesError() && ok;
+    ok = TestGeminiProviderShellUsesInjectedTransport() && ok;
+    ok = TestGeminiProviderShellCoastsOnTransportFailure() && ok;
+    ok = TestGeminiActorProviderParsesInjectedTransportIntent() && ok;
+    ok = TestGeminiActorProviderCoastsWithoutApiKey() && ok;
+    ok = TestGeminiActorProviderCoastsOnTransportFailure() && ok;
+    ok = TestGeminiHttpTransportFactoryMatchesAvailability() && ok;
+    ok = TestAsyncActorProviderQueueRunsGeminiActorWake() && ok;
     ok = TestAsyncActorProviderQueueRunsWakeOffCallerThread() && ok;
     ok = TestAsyncActorProviderQueueRejectsSubmitAfterShutdown() && ok;
     ok = TestAsyncActorProviderQueueFailsOutstandingRequestsOnShutdown() && ok;

@@ -20,7 +20,8 @@ void CActor::script_register(lua_State* luaState)
     [
         class_<CActor, CGameObject>("CActor")
             .def(constructor<>())
-            .def("conditions", &CActor::conditions),
+            .def("conditions", &CActor::conditions)
+            .def("cam_set", &CActor::cam_Set),
         class_<CLevelChanger, CGameObject>("CLevelChanger")
             .def(constructor<>())
     ];

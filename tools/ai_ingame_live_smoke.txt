@@ -1,0 +1,21 @@
+# In-game live AI session: load save, spawn mutant pack, observe in-game situation, wake AI, poll response, capture screenshot, quit.
+hello
+state
+sleep 5
+cmd start server(1/single/alife/load) client(localhost)
+sleep 40
+key space tap
+sleep 3
+state
+agent.provider live
+agent.pack.spawn dog_weak 3 8
+agent.pack.list
+agent.pack.observe 1
+agent.pack.wake 1
+agent.pack.commands
+agent.pack.wake 1 live
+sleep 1.0
+agent.actor.poll 1
+shot ingame_ai_pack
+sleep 2
+cmd quit

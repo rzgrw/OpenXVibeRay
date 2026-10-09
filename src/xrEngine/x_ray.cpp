@@ -15,6 +15,7 @@
 #include "xrNetServer/NET_AuthCheck.h"
 
 #include "AgentBridge.h"
+#include "AgentZoneRuntime.h"
 #include "IGame_Persistent.h"
 #include "LightAnimLibrary.h"
 #include "XR_IOConsole.h"
@@ -275,6 +276,7 @@ CApplication::CApplication(pcstr commandLine, GameModule* game, std::span<Render
     Console->OnDeviceInitialize();
 
     execUserScript();
+    CAgentZoneRuntime::Initialize();
     CAgentBridge::Initialize(); // no-op without -agent_bridge
     InitializeDiscord();
 
@@ -317,6 +319,7 @@ CApplication::~CApplication()
     FrameMarkStart(FRAME_MARK_APPLICATION_SHUTDOWN);
 
     CAgentBridge::Destroy(); // before console/device teardown — verbs use both
+    CAgentZoneRuntime::Destroy();
 
     // Run() normally hides the splash, but early-exit paths reach this
     // destructor with the splash thread still live — it must not outlive

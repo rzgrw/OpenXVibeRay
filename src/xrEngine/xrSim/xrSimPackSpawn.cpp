@@ -106,10 +106,28 @@ PackRegisterResult RegisterSessionMutantPack(const PackRegistration& registratio
     pack.packId = packId;
     pack.section = registration.section;
     pack.objectIds = registration.objectIds;
-    pack.actor.agentId = 2000 + packId;
-    pack.actor.scope = ActorAgentScope::MutantPack;
-    pack.actor.name = "session_" + registration.section + "_pack_" + std::to_string(packId);
-    pack.actor.memorySummary = registration.spawnReason.empty() ? "session_spawn" : registration.spawnReason;
+
+    const bool isSquad = registration.section.find("stalker") != std::string::npos ||
+        registration.section.find("bandit") != std::string::npos ||
+        registration.section.find("duty") != std::string::npos ||
+        registration.section.find("freedom") != std::string::npos ||
+        registration.section.find("monolith") != std::string::npos ||
+        registration.section.find("soldier") != std::string::npos ||
+        registration.section.find("army") != std::string::npos ||
+        registration.section.find("csky") != std::string::npos ||
+        registration.section.find("killer") != std::string::npos ||
+        registration.section.find("ecolog") != std::string::npos;
+
+    const bool isDuty = registration.section.find("duty") != std::string::npos;
+    pack.actor.scope = isSquad ? ActorAgentScope::Squad : ActorAgentScope::MutantPack;
+    pack.actor.agentId = (isSquad ? 1000 : 2000) + packId;
+    pack.actor.name = "session_" + registration.section + (isSquad ? "_squad_" : "_pack_") + std::to_string(packId);
+    if (!registration.spawnReason.empty())
+        pack.actor.memorySummary = registration.spawnReason;
+    else if (isDuty)
+        pack.actor.memorySummary = "duty_mission_purge_mutant_infestation";
+    else
+        pack.actor.memorySummary = isSquad ? "session_squad_spawn" : "session_spawn";
     g_sessionPacks.push_back(pack);
 
     PackRegisterResult result;

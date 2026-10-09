@@ -38,6 +38,22 @@ private:
     IAnthropicTransport* m_transport = nullptr;
 };
 
+class GeminiActorIntentProvider final : public IActorIntentProvider
+{
+public:
+    explicit GeminiActorIntentProvider(const AgentProviderConfig& config);
+
+    void SetTransport(IGeminiTransport* transport);
+    void SetOwnedTransport(std::unique_ptr<IGeminiTransport> transport);
+    ActorProviderResult Wake(const ActorWakeContext& context) override;
+    void Cancel() override;
+
+private:
+    AgentProviderConfig m_config;
+    std::unique_ptr<IGeminiTransport> m_ownedTransport;
+    IGeminiTransport* m_transport = nullptr;
+};
+
 std::unique_ptr<IActorIntentProvider> CreateLiveActorIntentProvider(const AgentProviderConfig& config);
 
 class AsyncActorProviderQueue

@@ -1,4 +1,5 @@
 #include "xrSim/xrSimAnthropicTransport.h"
+#include "xrSim/xrSimGeminiTransport.h"
 
 #include <atomic>
 #include <chrono>
@@ -154,6 +155,13 @@ std::unique_ptr<IAnthropicTransport> CreateAnthropicHttpTransport()
 
 std::unique_ptr<IAgentProvider> CreateLiveAgentProvider(const AgentProviderConfig& config)
 {
+    if (config.provider == "gemini" || config.provider == "google")
+    {
+        auto provider = std::make_unique<GeminiAgentProviderShell>(config);
+        provider->SetOwnedTransport(CreateGeminiHttpTransport());
+        return provider;
+    }
+
     auto provider = std::make_unique<AnthropicAgentProviderShell>(config);
     if (config.provider == "anthropic")
         provider->SetOwnedTransport(CreateAnthropicHttpTransport());

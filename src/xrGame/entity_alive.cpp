@@ -20,6 +20,7 @@
 #include "game_object_space.h"
 #include "material_manager.h"
 #include "game_base_space.h"
+#include "AgentZoneRuntime.h"
 
 #define SMALL_ENTITY_RADIUS 0.6f
 #define BLOOD_MARKS_SECT "bloody_marks"
@@ -302,6 +303,13 @@ void CEntityAlive::Hit(SHit* pHDS)
             RELATION_REGISTRY().Action(EA, this, RELATION_REGISTRY::ATTACK);
         }
     }
+
+    if (HDS.who)
+    {
+        const uint32_t damagePermille =
+            static_cast<uint32_t>(clampr(HDS.damage() * 1000.f, 0.f, 1000.f));
+        CAgentZoneRuntime::NotifyHit(ID(), HDS.who->ID(), damagePermille);
+    }
 }
 
 void CEntityAlive::Die(IGameObject* who)
@@ -309,6 +317,7 @@ void CEntityAlive::Die(IGameObject* who)
     if (IsGameTypeSingle())
         RELATION_REGISTRY().Action(smart_cast<CEntityAlive*>(who), this, RELATION_REGISTRY::KILL);
     inherited::Die(who);
+    CAgentZoneRuntime::NotifyDeath(ID(), who ? who->ID() : u16(-1));
 
     const CGameObject* who_object = smart_cast<const CGameObject*>(who);
     callback(GameObject::eDeath)(lua_game_object(), who_object ? who_object->lua_game_object() : 0);

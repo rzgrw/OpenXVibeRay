@@ -1,6 +1,7 @@
 #include "xrSim/xrSimActorProvider.h"
 
 #include "xrSim/xrSimAnthropicTransport.h"
+#include "xrSim/xrSimGeminiTransport.h"
 
 #include <condition_variable>
 #include <deque>
@@ -93,8 +94,71 @@ void AnthropicActorIntentProvider::Cancel()
         m_transport->Cancel();
 }
 
+GeminiActorIntentProvider::GeminiActorIntentProvider(const AgentProviderConfig& config) : m_config(config) {}
+
+void GeminiActorIntentProvider::SetTransport(IGeminiTransport* transport)
+{
+    m_ownedTransport.reset();
+    m_transport = transport;
+}
+
+void GeminiActorIntentProvider::SetOwnedTransport(std::unique_ptr<IGeminiTransport> transport)
+{
+    m_ownedTransport = std::move(transport);
+    m_transport = m_ownedTransport.get();
+}
+
+ActorProviderResult GeminiActorIntentProvider::Wake(const ActorWakeContext& context)
+{
+    if (!m_config.enabled)
+        return CoastActor(m_config, "provider_disabled");
+    if (m_config.provider != "gemini" && m_config.provider != "google")
+        return CoastActor(m_config, "unsupported_provider");
+    if (m_config.apiKey.empty())
+        return CoastActor(m_config, "missing_api_key");
+    if (!m_transport)
+        return CoastActor(m_config, "network_adapter_not_linked");
+
+    const GeminiGenerateContentRequest request =
+        BuildGeminiGenerateContentRequestForPrompt(m_config, context.prompt, 1024);
+    const GeminiTransportResult transportResult = m_transport->Send(m_config, request);
+    if (!transportResult.ok)
+        return CoastActor(m_config, "transport_error", transportResult.error);
+    if (transportResult.status != 200)
+        return CoastActor(m_config, "http_status", std::to_string(transportResult.status));
+
+    const GeminiTextResult decoded = DecodeGeminiGenerateContentText(transportResult.body);
+    if (!decoded.ok)
+        return FailActor(m_config, decoded.error);
+
+    const ActorIntentParseResult parsed = ParseActorIntentPlan(decoded.text);
+    if (!parsed.ok)
+        return FailActor(m_config, parsed.reason);
+
+    ActorProviderResult result;
+    result.ok = true;
+    result.coast = parsed.plan.coast;
+    result.provider = m_config.provider;
+    result.model = m_config.model;
+    result.plan = parsed.plan;
+    return result;
+}
+
+void GeminiActorIntentProvider::Cancel()
+{
+    if (m_transport)
+        m_transport->Cancel();
+}
+
 std::unique_ptr<IActorIntentProvider> CreateLiveActorIntentProvider(const AgentProviderConfig& config)
 {
+    if (config.provider == "gemini" || config.provider == "google")
+    {
+        auto provider = std::make_unique<GeminiActorIntentProvider>(config);
+        provider->SetOwnedTransport(CreateGeminiHttpTransport());
+        return provider;
+    }
+
     auto provider = std::make_unique<AnthropicActorIntentProvider>(config);
     if (config.provider == "anthropic")
         provider->SetOwnedTransport(CreateAnthropicHttpTransport());

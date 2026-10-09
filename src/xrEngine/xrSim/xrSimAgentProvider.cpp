@@ -340,6 +340,20 @@ bool ReadJsonString(const std::string& text, size_t& pos, std::string& decoded)
     return ReadJsonStringAt(text, pos, decoded);
 }
 
+bool ReadJsonUint32(const std::string& text, size_t& pos, uint32_t& value)
+{
+    SkipJsonWhitespace(text, pos);
+    if (pos >= text.size() || std::isdigit(static_cast<unsigned char>(text[pos])) == 0)
+        return false;
+    value = 0;
+    while (pos < text.size() && std::isdigit(static_cast<unsigned char>(text[pos])) != 0)
+    {
+        value = value * 10 + uint32_t(text[pos] - '0');
+        ++pos;
+    }
+    return true;
+}
+
 bool ExtractAnthropicTextContentItem(
     const std::string& text, size_t& pos, std::string& responseText, bool& foundTextBlock)
 {
@@ -408,10 +422,17 @@ bool ExtractAnthropicTextContentItem(
     return false;
 }
 
-bool ExtractAnthropicTextContent(const std::string& text, std::string& responseText, bool& foundTextBlock)
+bool ExtractAnthropicTextContent(
+    const std::string& text,
+    std::string& responseText,
+    bool& foundTextBlock,
+    uint32_t& inTokens,
+    uint32_t& outTokens)
 {
     foundTextBlock = false;
     responseText.clear();
+    inTokens = 0;
+    outTokens = 0;
 
     size_t pos = 0;
     SkipJsonWhitespace(text, pos);
@@ -452,8 +473,6 @@ bool ExtractAnthropicTextContent(const std::string& text, std::string& responseT
                     {
                         if (!ExtractAnthropicTextContentItem(text, pos, responseText, foundTextBlock))
                             return false;
-                        if (foundTextBlock && !responseText.empty())
-                            return true;
                     }
                     else if (!SkipJsonValue(text, pos))
                     {
@@ -475,9 +494,388 @@ bool ExtractAnthropicTextContent(const std::string& text, std::string& responseT
                 }
             }
         }
+        else if (key == "usage")
+        {
+            if (pos >= text.size() || text[pos] != '{')
+                return false;
+            ++pos;
+            SkipJsonWhitespace(text, pos);
+            while (pos < text.size() && text[pos] != '}')
+            {
+                std::string uKey;
+                if (!ReadJsonString(text, pos, uKey))
+                    return false;
+                SkipJsonWhitespace(text, pos);
+                if (pos >= text.size() || text[pos] != ':')
+                    return false;
+                ++pos;
+                SkipJsonWhitespace(text, pos);
+
+                if (uKey == "input_tokens")
+                {
+                    if (!ReadJsonUint32(text, pos, inTokens))
+                        return false;
+                }
+                else if (uKey == "output_tokens")
+                {
+                    if (!ReadJsonUint32(text, pos, outTokens))
+                        return false;
+                }
+                else
+                {
+                    if (!SkipJsonValue(text, pos))
+                        return false;
+                }
+                SkipJsonWhitespace(text, pos);
+                if (pos < text.size() && text[pos] == ',')
+                {
+                    ++pos;
+                    SkipJsonWhitespace(text, pos);
+                }
+            }
+            if (pos >= text.size() || text[pos] != '}')
+                return false;
+            ++pos;
+        }
         else if (!SkipJsonValue(text, pos))
         {
             return false;
+        }
+
+        SkipJsonWhitespace(text, pos);
+        if (pos >= text.size())
+            return false;
+        if (text[pos] == '}')
+            return true;
+        if (text[pos] != ',')
+            return false;
+        ++pos;
+        SkipJsonWhitespace(text, pos);
+    }
+    return false;
+}
+
+bool ExtractGeminiPart(
+    const std::string& text, size_t& pos, std::string& partText, bool& hasPartText, bool& isThought)
+{
+    partText.clear();
+    hasPartText = false;
+    isThought = false;
+
+    if (pos >= text.size() || text[pos] != '{')
+        return false;
+    ++pos;
+    SkipJsonWhitespace(text, pos);
+    if (pos < text.size() && text[pos] == '}')
+    {
+        ++pos;
+        return true;
+    }
+
+    while (pos < text.size())
+    {
+        std::string key;
+        if (!ReadJsonString(text, pos, key))
+            return false;
+        SkipJsonWhitespace(text, pos);
+        if (pos >= text.size() || text[pos] != ':')
+            return false;
+        ++pos;
+        SkipJsonWhitespace(text, pos);
+
+        if (key == "text")
+        {
+            if (!ReadJsonString(text, pos, partText))
+                return false;
+            hasPartText = true;
+        }
+        else if (key == "thought")
+        {
+            if (pos + 4 <= text.size() && text.compare(pos, 4, "true") == 0)
+            {
+                isThought = true;
+                pos += 4;
+            }
+            else if (pos + 5 <= text.size() && text.compare(pos, 5, "false") == 0)
+            {
+                isThought = false;
+                pos += 5;
+            }
+            else
+            {
+                if (!SkipJsonValue(text, pos))
+                    return false;
+            }
+        }
+        else
+        {
+            if (!SkipJsonValue(text, pos))
+                return false;
+        }
+
+        SkipJsonWhitespace(text, pos);
+        if (pos >= text.size())
+            return false;
+        if (text[pos] == '}')
+        {
+            ++pos;
+            return true;
+        }
+        if (text[pos] != ',')
+            return false;
+        ++pos;
+        SkipJsonWhitespace(text, pos);
+    }
+    return false;
+}
+
+bool ExtractGeminiTextContent(
+    const std::string& text,
+    std::string& responseText,
+    bool& foundTextBlock,
+    std::string& errorMsg,
+    uint32_t& inTokens,
+    uint32_t& outTokens)
+{
+    foundTextBlock = false;
+    responseText.clear();
+    errorMsg.clear();
+    inTokens = 0;
+    outTokens = 0;
+
+    size_t pos = 0;
+    SkipJsonWhitespace(text, pos);
+    if (pos >= text.size() || text[pos] != '{')
+        return false;
+    ++pos;
+    SkipJsonWhitespace(text, pos);
+    if (pos < text.size() && text[pos] == '}')
+        return true;
+
+    while (pos < text.size())
+    {
+        std::string key;
+        if (!ReadJsonString(text, pos, key))
+            return false;
+        SkipJsonWhitespace(text, pos);
+        if (pos >= text.size() || text[pos] != ':')
+            return false;
+        ++pos;
+        SkipJsonWhitespace(text, pos);
+
+        if (key == "candidates")
+        {
+            if (pos >= text.size() || text[pos] != '[')
+                return false;
+            ++pos;
+            SkipJsonWhitespace(text, pos);
+            while (pos < text.size() && text[pos] != ']')
+            {
+                if (text[pos] != '{')
+                    return false;
+                ++pos;
+                SkipJsonWhitespace(text, pos);
+
+                while (pos < text.size())
+                {
+                    std::string candKey;
+                    if (!ReadJsonString(text, pos, candKey))
+                        return false;
+                    SkipJsonWhitespace(text, pos);
+                    if (pos >= text.size() || text[pos] != ':')
+                        return false;
+                    ++pos;
+                    SkipJsonWhitespace(text, pos);
+
+                    if (candKey == "content")
+                    {
+                        if (pos >= text.size() || text[pos] != '{')
+                            return false;
+                        ++pos;
+                        SkipJsonWhitespace(text, pos);
+
+                        while (pos < text.size())
+                        {
+                            std::string contentKey;
+                            if (!ReadJsonString(text, pos, contentKey))
+                                return false;
+                            SkipJsonWhitespace(text, pos);
+                            if (pos >= text.size() || text[pos] != ':')
+                                return false;
+                            ++pos;
+                            SkipJsonWhitespace(text, pos);
+
+                            if (contentKey == "parts")
+                            {
+                                if (pos >= text.size() || text[pos] != '[')
+                                    return false;
+                                ++pos;
+                                SkipJsonWhitespace(text, pos);
+                                while (pos < text.size() && text[pos] != ']')
+                                {
+                                    std::string partText;
+                                    bool hasPartText = false;
+                                    bool isThought = false;
+                                    if (!ExtractGeminiPart(text, pos, partText, hasPartText, isThought))
+                                        return false;
+
+                                    if (hasPartText && !isThought)
+                                    {
+                                        responseText += partText;
+                                        foundTextBlock = true;
+                                    }
+
+                                    SkipJsonWhitespace(text, pos);
+                                    if (pos < text.size() && text[pos] == ',')
+                                    {
+                                        ++pos;
+                                        SkipJsonWhitespace(text, pos);
+                                    }
+                                }
+                                if (pos >= text.size() || text[pos] != ']')
+                                    return false;
+                                ++pos;
+                            }
+                            else
+                            {
+                                if (!SkipJsonValue(text, pos))
+                                    return false;
+                            }
+
+                            SkipJsonWhitespace(text, pos);
+                            if (pos >= text.size())
+                                return false;
+                            if (text[pos] == '}')
+                            {
+                                ++pos;
+                                break;
+                            }
+                            if (text[pos] != ',')
+                                return false;
+                            ++pos;
+                            SkipJsonWhitespace(text, pos);
+                        }
+                    }
+                    else
+                    {
+                        if (!SkipJsonValue(text, pos))
+                            return false;
+                    }
+
+                    SkipJsonWhitespace(text, pos);
+                    if (pos >= text.size())
+                        return false;
+                    if (text[pos] == '}')
+                    {
+                        ++pos;
+                        break;
+                    }
+                    if (text[pos] != ',')
+                        return false;
+                    ++pos;
+                    SkipJsonWhitespace(text, pos);
+                }
+
+                SkipJsonWhitespace(text, pos);
+                if (pos < text.size() && text[pos] == ',')
+                {
+                    ++pos;
+                    SkipJsonWhitespace(text, pos);
+                }
+            }
+            if (pos >= text.size() || text[pos] != ']')
+                return false;
+            ++pos;
+        }
+        else if (key == "error")
+        {
+            if (pos >= text.size() || text[pos] != '{')
+                return false;
+            ++pos;
+            SkipJsonWhitespace(text, pos);
+            while (pos < text.size())
+            {
+                std::string errKey;
+                if (!ReadJsonString(text, pos, errKey))
+                    return false;
+                SkipJsonWhitespace(text, pos);
+                if (pos >= text.size() || text[pos] != ':')
+                    return false;
+                ++pos;
+                SkipJsonWhitespace(text, pos);
+
+                if (errKey == "message")
+                {
+                    if (!ReadJsonString(text, pos, errorMsg))
+                        return false;
+                }
+                else
+                {
+                    if (!SkipJsonValue(text, pos))
+                        return false;
+                }
+
+                SkipJsonWhitespace(text, pos);
+                if (pos >= text.size())
+                    return false;
+                if (text[pos] == '}')
+                {
+                    ++pos;
+                    break;
+                }
+                if (text[pos] != ',')
+                    return false;
+                ++pos;
+                SkipJsonWhitespace(text, pos);
+            }
+        }
+        else if (key == "usageMetadata")
+        {
+            if (pos >= text.size() || text[pos] != '{')
+                return false;
+            ++pos;
+            SkipJsonWhitespace(text, pos);
+            while (pos < text.size() && text[pos] != '}')
+            {
+                std::string uKey;
+                if (!ReadJsonString(text, pos, uKey))
+                    return false;
+                SkipJsonWhitespace(text, pos);
+                if (pos >= text.size() || text[pos] != ':')
+                    return false;
+                ++pos;
+                SkipJsonWhitespace(text, pos);
+
+                if (uKey == "promptTokenCount")
+                {
+                    if (!ReadJsonUint32(text, pos, inTokens))
+                        return false;
+                }
+                else if (uKey == "candidatesTokenCount")
+                {
+                    if (!ReadJsonUint32(text, pos, outTokens))
+                        return false;
+                }
+                else
+                {
+                    if (!SkipJsonValue(text, pos))
+                        return false;
+                }
+                SkipJsonWhitespace(text, pos);
+                if (pos < text.size() && text[pos] == ',')
+                {
+                    ++pos;
+                    SkipJsonWhitespace(text, pos);
+                }
+            }
+            if (pos >= text.size() || text[pos] != '}')
+                return false;
+            ++pos;
+        }
+        else
+        {
+            if (!SkipJsonValue(text, pos))
+                return false;
         }
 
         SkipJsonWhitespace(text, pos);
@@ -555,6 +953,49 @@ AgentProviderResult AnthropicAgentProviderShell::Wake(const AgentWakeContext& co
     return ParseAnthropicMessagesTextResponse(transportResult.body, m_config.provider, m_config.model);
 }
 
+GeminiAgentProviderShell::GeminiAgentProviderShell(const AgentProviderConfig& config) : m_config(config) {}
+
+void GeminiAgentProviderShell::SetTransport(IGeminiTransport* transport)
+{
+    m_ownedTransport.reset();
+    m_transport = transport;
+}
+
+void GeminiAgentProviderShell::SetOwnedTransport(std::unique_ptr<IGeminiTransport> transport)
+{
+    m_ownedTransport = std::move(transport);
+    m_transport = m_ownedTransport.get();
+}
+
+AgentProviderResult GeminiAgentProviderShell::Wake(const AgentWakeContext& context)
+{
+    if (!m_config.enabled)
+        return CoastResponse(m_config.provider, m_config.model, "provider_disabled");
+    if (m_config.provider != "gemini" && m_config.provider != "google")
+        return CoastResponse(m_config.provider, m_config.model, "unsupported_provider");
+    if (m_config.apiKey.empty())
+        return CoastResponse(m_config.provider, m_config.model, "missing_api_key");
+    if (!m_transport)
+        return CoastResponse(m_config.provider, m_config.model, "network_adapter_not_linked");
+
+    const GeminiGenerateContentRequest request = BuildGeminiGenerateContentRequest(m_config, context, 1024);
+    const GeminiTransportResult transportResult = m_transport->Send(m_config, request);
+    if (!transportResult.ok)
+    {
+        AgentProviderResult result = CoastResponse(m_config.provider, m_config.model, "transport_error");
+        result.error = transportResult.error;
+        return result;
+    }
+    if (transportResult.status != 200)
+    {
+        AgentProviderResult result = CoastResponse(m_config.provider, m_config.model, "http_status");
+        result.error = std::to_string(transportResult.status);
+        return result;
+    }
+
+    return ParseGeminiGenerateContentTextResponse(transportResult.body, m_config.provider, m_config.model);
+}
+
 RecordedAgentProvider::RecordedAgentProvider(const std::vector<AgentProviderResult>& script) : m_script(script) {}
 
 AgentProviderResult RecordedAgentProvider::Wake(const AgentWakeContext& context)
@@ -602,7 +1043,7 @@ AgentProviderResult ParseAgentProviderResponse(
     {
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
-        if (line == "xrsim_agent_response_v1")
+        if (line == "xrsim_agent_response_v1" || line == "```xrsim_agent_response_v1")
         {
             sawVersion = true;
             break;
@@ -623,7 +1064,7 @@ AgentProviderResult ParseAgentProviderResponse(
             line.pop_back();
         if (line.empty())
             continue;
-        if (line == "end")
+        if (line == "end" || line == "end```")
         {
             sawEnd = true;
             break;
@@ -708,19 +1149,48 @@ AgentProviderConfig BuildAgentProviderConfig(const std::vector<AgentConfigVar>& 
     AgentProviderConfig config;
 
     const std::string provider = FindVar(vars, "XRAY_AGENT_PROVIDER");
+    const std::string model = FindVar(vars, "XRAY_AGENT_MODEL");
+    const std::string genericKey = FindVar(vars, "XRAY_AGENT_API_KEY");
+    const std::string anthropicKey = FindVar(vars, "ANTHROPIC_API_KEY");
+    const std::string geminiKey = FindVar(vars, "GEMINI_API_KEY");
+
     if (!provider.empty())
     {
         config.provider = provider;
         config.enabled = provider != "off" && provider != "disabled";
     }
+    else if (!model.empty() && model.rfind("gemini", 0) == 0)
+    {
+        config.provider = "gemini";
+        config.enabled = true;
+    }
+    else if (!geminiKey.empty() && anthropicKey.empty())
+    {
+        config.provider = "gemini";
+        config.enabled = true;
+    }
 
-    const std::string model = FindVar(vars, "XRAY_AGENT_MODEL");
     if (!model.empty())
+    {
         config.model = model;
+    }
+    else if (config.provider == "gemini" || config.provider == "google")
+    {
+        config.model = "gemini-3.8-flash";
+    }
 
-    const std::string genericKey = FindVar(vars, "XRAY_AGENT_API_KEY");
-    const std::string anthropicKey = FindVar(vars, "ANTHROPIC_API_KEY");
-    config.apiKey = genericKey.empty() ? anthropicKey : genericKey;
+    if (!genericKey.empty())
+    {
+        config.apiKey = genericKey;
+    }
+    else if (config.provider == "gemini" || config.provider == "google")
+    {
+        config.apiKey = !geminiKey.empty() ? geminiKey : anthropicKey;
+    }
+    else
+    {
+        config.apiKey = !anthropicKey.empty() ? anthropicKey : geminiKey;
+    }
 
     uint32_t timeoutMs = 0;
     if (ParseUint32(FindVar(vars, "XRAY_AGENT_TIMEOUT_MS"), timeoutMs) && timeoutMs > 0)
@@ -737,6 +1207,7 @@ AgentProviderConfig LoadAgentProviderConfigFromEnvironment()
         "XRAY_AGENT_MODEL",
         "XRAY_AGENT_API_KEY",
         "ANTHROPIC_API_KEY",
+        "GEMINI_API_KEY",
         "XRAY_AGENT_TIMEOUT_MS",
     };
 
@@ -823,7 +1294,7 @@ AnthropicTextResult DecodeAnthropicMessagesText(const std::string& text)
 {
     AnthropicTextResult result;
     bool foundTextBlock = false;
-    if (!ExtractAnthropicTextContent(text, result.text, foundTextBlock))
+    if (!ExtractAnthropicTextContent(text, result.text, foundTextBlock, result.inputTokens, result.outputTokens))
     {
         result.error = foundTextBlock ? "invalid anthropic text content" : "anthropic response missing text block";
         result.text.clear();
@@ -844,6 +1315,63 @@ AgentProviderResult ParseAnthropicMessagesTextResponse(
     const std::string& text, const std::string& provider, const std::string& model)
 {
     const AnthropicTextResult decoded = DecodeAnthropicMessagesText(text);
+    if (!decoded.ok)
+        return FailResponse(provider, model, decoded.error);
+
+    return ParseAgentProviderResponse(decoded.text, provider, model);
+}
+
+GeminiGenerateContentRequest BuildGeminiGenerateContentRequest(
+    const AgentProviderConfig& config, const AgentWakeContext& context, uint32_t maxTokens)
+{
+    return BuildGeminiGenerateContentRequestForPrompt(config, BuildAgentWakePrompt(context), maxTokens);
+}
+
+GeminiGenerateContentRequest BuildGeminiGenerateContentRequestForPrompt(
+    const AgentProviderConfig& config, const std::string& prompt, uint32_t maxTokens)
+{
+    GeminiGenerateContentRequest request;
+    request.method = "POST";
+    const std::string modelName = config.model.empty() ? "gemini-3.8-flash" : config.model;
+    request.path = "/v1beta/models/" + modelName + ":generateContent";
+    request.contentType = "application/json";
+
+    std::ostringstream body;
+    body << "{\"contents\":[{\"role\":\"user\",\"parts\":[{\"text\":\""
+         << EscapeJsonString(prompt)
+         << "\"}]}],\"generationConfig\":{\"maxOutputTokens\":"
+         << maxTokens << "}}";
+    request.body = body.str();
+    return request;
+}
+
+GeminiTextResult DecodeGeminiGenerateContentText(const std::string& text)
+{
+    GeminiTextResult result;
+    bool foundTextBlock = false;
+    std::string errorMsg;
+    if (!ExtractGeminiTextContent(
+            text, result.text, foundTextBlock, errorMsg, result.inputTokens, result.outputTokens))
+    {
+        result.error = !errorMsg.empty() ? errorMsg : "invalid gemini json response";
+        result.text.clear();
+        return result;
+    }
+    if (!foundTextBlock)
+    {
+        result.error = !errorMsg.empty() ? errorMsg : "gemini response missing text block";
+        result.text.clear();
+        return result;
+    }
+
+    result.ok = true;
+    return result;
+}
+
+AgentProviderResult ParseGeminiGenerateContentTextResponse(
+    const std::string& text, const std::string& provider, const std::string& model)
+{
+    const GeminiTextResult decoded = DecodeGeminiGenerateContentText(text);
     if (!decoded.ok)
         return FailResponse(provider, model, decoded.error);
 

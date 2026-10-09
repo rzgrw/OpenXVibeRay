@@ -9,6 +9,7 @@ CAgentBridge* g_agent_bridge = nullptr;
 #include "IGame_Level.h"
 #include "xrSim/xrSimBridge.h"
 #include "xrSim/xrSimPackSpawn.h"
+#include "AgentZoneRuntime.h"
 #include "xrScriptEngine/script_engine.hpp"
 #include <lua.hpp>
 
@@ -250,6 +251,8 @@ void CAgentBridge::HandleRequest(const std::string& line)
     else if (verb == "state") result = VerbState(ok);
     else if (verb == "shot")  result = VerbShot(payload, ok);
     else if (verb == "agent.pack.spawn") result = VerbAgentPackSpawn(payload, ok);
+    else if (verb.rfind("agent.zone.", 0) == 0)
+        result = CAgentZoneRuntime::HandleBridgeVerb(verb, payload, ok);
     else if (verb.rfind("ai.", 0) == 0 || verb.rfind("agent.", 0) == 0)
         result = xrSim::HandleBridgeVerb(verb, payload, ok);
     else { ok = false; result = "unknown verb: " + verb; }

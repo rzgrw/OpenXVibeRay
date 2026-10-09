@@ -72,6 +72,8 @@ struct AnthropicTextResult
     bool ok = false;
     std::string text;
     std::string error;
+    uint32_t inputTokens = 0;
+    uint32_t outputTokens = 0;
 };
 
 class IAnthropicTransport
@@ -80,6 +82,41 @@ public:
     virtual ~IAnthropicTransport() = default;
     virtual AnthropicTransportResult Send(
         const AgentProviderConfig& config, const AnthropicMessagesRequest& request) = 0;
+    virtual void Cancel() {}
+};
+
+struct GeminiGenerateContentRequest
+{
+    std::string method;
+    std::string path;
+    std::string contentType;
+    std::string body;
+};
+
+struct GeminiTransportResult
+{
+    bool ok = false;
+    uint32_t status = 0;
+    uint32_t latencyMs = 0;
+    std::string body;
+    std::string error;
+};
+
+struct GeminiTextResult
+{
+    bool ok = false;
+    std::string text;
+    std::string error;
+    uint32_t inputTokens = 0;
+    uint32_t outputTokens = 0;
+};
+
+class IGeminiTransport
+{
+public:
+    virtual ~IGeminiTransport() = default;
+    virtual GeminiTransportResult Send(
+        const AgentProviderConfig& config, const GeminiGenerateContentRequest& request) = 0;
     virtual void Cancel() {}
 };
 
@@ -111,6 +148,21 @@ private:
     IAnthropicTransport* m_transport = nullptr;
 };
 
+class GeminiAgentProviderShell : public IAgentProvider
+{
+public:
+    explicit GeminiAgentProviderShell(const AgentProviderConfig& config);
+
+    void SetTransport(IGeminiTransport* transport);
+    void SetOwnedTransport(std::unique_ptr<IGeminiTransport> transport);
+    AgentProviderResult Wake(const AgentWakeContext& context) override;
+
+private:
+    AgentProviderConfig m_config;
+    std::unique_ptr<IGeminiTransport> m_ownedTransport;
+    IGeminiTransport* m_transport = nullptr;
+};
+
 class RecordedAgentProvider : public IAgentProvider
 {
 public:
@@ -137,6 +189,13 @@ AnthropicMessagesRequest BuildAnthropicMessagesRequestForPrompt(
     const AgentProviderConfig& config, const std::string& prompt, uint32_t maxTokens);
 AnthropicTextResult DecodeAnthropicMessagesText(const std::string& text);
 AgentProviderResult ParseAnthropicMessagesTextResponse(
+    const std::string& text, const std::string& provider, const std::string& model);
+GeminiGenerateContentRequest BuildGeminiGenerateContentRequest(
+    const AgentProviderConfig& config, const AgentWakeContext& context, uint32_t maxTokens);
+GeminiGenerateContentRequest BuildGeminiGenerateContentRequestForPrompt(
+    const AgentProviderConfig& config, const std::string& prompt, uint32_t maxTokens);
+GeminiTextResult DecodeGeminiGenerateContentText(const std::string& text);
+AgentProviderResult ParseGeminiGenerateContentTextResponse(
     const std::string& text, const std::string& provider, const std::string& model);
 
 class RecordedTextAgentProvider : public IAgentProvider

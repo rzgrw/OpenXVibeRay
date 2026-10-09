@@ -1,5 +1,6 @@
 # Thin-harness debug AI smoke: LLM owns decisions, C++ owns embodiment.
 hello
+state
 ai.reset
 agent.provider live
 agent.actor.list
@@ -7,7 +8,7 @@ agent.actor.observe squad
 agent.actor.wake squad
 agent.actor.commands
 agent.actor.wake squad live
-sleep 0.1
+sleep 0.8
 agent.actor.poll 1
 agent.actor.observe mutant_pack
 agent.actor.wake mutant_pack

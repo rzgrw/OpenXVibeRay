@@ -749,6 +749,7 @@ target_sources(xrGame PRIVATE
     Level_network_map_sync.h
     Level_network_messages.cpp
     Level_network_spawn.cpp
+    Level_agent_zone.cpp
     Level_network_start_client.cpp
     level_path_builder.h
     level_path_manager.h

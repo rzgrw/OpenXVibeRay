@@ -342,6 +342,19 @@ public:
     bool AgentBridgeSpawnObjectNearCurrentEntity(
         pcstr section, u32 ordinal, u32 count, float radius, u16& id, xr_string& reason) override;
 
+    xrSim::ReadPositionResult CapturePlayerOrigin() override;
+    xrSim::LiveAdapterResult ValidateSection(const std::string& section) override;
+    xrSim::SpawnGroupResult SpawnGroup(const xrSim::LiveSpawnRequest& request) override;
+    xrSim::LiveAdapterResult DestroyObjects(const std::vector<uint16_t>& objectIds) override;
+    xrSim::LiveAdapterResult ApplyObjective(const xrSim::LiveBinding& binding,
+        const xrSim::LiveObjectiveCommand& command) override;
+    xrSim::ObserveGroupResult ObserveGroup(const xrSim::LiveBinding& binding) override;
+    xrSim::LiveAdapterResult ReleaseObjective(const xrSim::LiveBinding& binding) override;
+    xrSim::LiveAdapterResult SetPlayerAt(const xrSim::FixedPosition& position) override;
+    xrSim::LiveAdapterResult FacePlayerAt(const xrSim::LiveBinding& binding) override;
+    xrSim::LiveAdapterResult DamageGroupFromPlayer(const xrSim::LiveBinding& binding,
+        uint32_t damagePermille) override;
+
     // Save/Load/State
     void SLS_Load(LPCSTR name); // Game Load
     void SLS_Default(); // Default/Editor Load

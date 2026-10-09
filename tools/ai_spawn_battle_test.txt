@@ -1,0 +1,34 @@
+# Real-time in-game battle: godmode, flying around, mutant packs and stalker packs managed by AI
+hello
+state
+sleep 5
+cmd start server(1/single/alife/load) client(localhost)
+sleep 40
+key space tap
+sleep 3
+state
+cmd g_god on
+agent.provider live
+agent.pack.spawn dog_weak 3 8
+agent.pack.spawn sim_default_stalker_0 2 10
+agent.pack.spawn sim_default_bandit_0 2 14
+agent.pack.list
+agent.pack.observe 1
+agent.pack.observe 2
+agent.pack.observe 3
+agent.pack.wake 1 live
+agent.pack.wake 2 live
+agent.pack.wake 3 live
+sleep 1.2
+agent.actor.poll 1
+agent.actor.poll 2
+agent.actor.poll 3
+shot ingame_battle_ground
+cmd g_no_clip
+key w down
+sleep 2
+key w up
+mouse move 200 -50
+shot ingame_battle_air
+sleep 1
+cmd quit

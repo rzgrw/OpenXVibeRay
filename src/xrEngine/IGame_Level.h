@@ -10,6 +10,7 @@
 #include "EngineAPI.h"
 #include "EventAPI.h"
 #include "pure.h"
+#include "xrSim/xrSimMaterialization.h"
 
 // refs
 class ENGINE_API CCameraManager;
@@ -55,7 +56,8 @@ public:
 class ENGINE_API IGame_Level : public IInputReceiver,
                                public pureRender,
                                public pureFrame,
-                               public IEventReceiver
+                               public IEventReceiver,
+                               public xrSim::IAgentZoneLiveAdapter
 {
     bool m_world_rendered;
 

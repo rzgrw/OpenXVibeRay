@@ -140,7 +140,7 @@ ActorIntentParseResult ParseActorIntentPlan(const std::string& text)
     {
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
-        if (line == "xrsim_actor_intent_v1")
+        if (line == "xrsim_actor_intent_v1" || line == "```xrsim_actor_intent_v1")
         {
             sawVersion = true;
             break;
@@ -166,10 +166,10 @@ ActorIntentParseResult ParseActorIntentPlan(const std::string& text)
         if (line.empty())
             continue;
 
-        if (result.plan.coast && line != "coast" && line != "end")
+        if (result.plan.coast && line != "coast" && line != "end" && line != "end```")
             return FailActorIntent("coast cannot be mixed with intent metadata");
 
-        if (line == "end")
+        if (line == "end" || line == "end```")
         {
             sawEnd = true;
             break;
