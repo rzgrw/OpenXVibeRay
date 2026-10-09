@@ -9,6 +9,7 @@
 #include "CameraManager.h"
 #include "xr_object.h"
 #include "Feel_Sound.h"
+#include "AgentZoneRuntime.h"
 
 ENGINE_API IGame_Level* g_pGameLevel = NULL;
 extern bool g_bLoaded;
@@ -35,6 +36,7 @@ IGame_Level::~IGame_Level()
 {
     ZoneScoped;
 
+    CAgentZoneRuntime::OnLevelGone(this);
     if (strstr(Core.Params, "-nes_texture_storing"))
         GEnv.Render->ResourcesStoreNecessaryTextures();
     xr_delete(pLevel);
@@ -64,6 +66,8 @@ void IGame_Level::net_Stop()
 {
     ZoneScoped;
 
+    // The AI zone runtime must not touch this level once its objects go away.
+    CAgentZoneRuntime::OnLevelGone(this);
     // XXX: why update 6 times?
     for (int i = 0; i < 6; i++)
         Objects.Update(false);

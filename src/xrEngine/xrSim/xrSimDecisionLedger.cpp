@@ -58,23 +58,54 @@ std::string DecisionLedger::Dump() const
     return out.str();
 }
 
+namespace
+{
+const char* ProviderVerdictName(ProviderVerdict verdict)
+{
+    switch (verdict)
+    {
+    case ProviderVerdict::Accepted: return "accepted";
+    case ProviderVerdict::Coast: return "coast";
+    case ProviderVerdict::Timeout: return "timeout";
+    case ProviderVerdict::RateLimited: return "rate_limited";
+    case ProviderVerdict::TransportError: return "transport_error";
+    case ProviderVerdict::Cancelled: return "cancelled";
+    case ProviderVerdict::CodecRejected: return "codec_rejected";
+    case ProviderVerdict::ValidationRejected: return "validation_rejected";
+    case ProviderVerdict::StaleRejected: return "stale_rejected";
+    }
+    return "unknown";
+}
+} // namespace
+
 std::string DecisionLedger::DumpPage(uint64_t afterSeq, uint32_t limit) const
 {
     std::ostringstream out;
     uint32_t count = 0;
+    uint64_t lastSeq = afterSeq;
+    bool more = false;
     for (const auto& r : m_requests)
     {
         if (r.seq <= afterSeq)
             continue;
         if (limit > 0 && count >= limit)
+        {
+            more = true;
             break;
+        }
 
         out << "seq=" << r.seq << " req=" << r.requestId << " agent=" << r.agentId
+            << " scope=" << uint32_t(r.scope.kind) << ":" << r.scope.id
+            << " base_rev=" << r.baseRevision << " wake=" << r.wakeReason
             << " p_hash=" << r.promptHash << " r_hash=" << r.responseHash
             << " prov=" << r.provider << " model=" << r.model
-            << " verdict=" << uint32_t(r.providerVerdict) << "\n";
+            << " verdict=" << uint32_t(r.providerVerdict) << ":" << ProviderVerdictName(r.providerVerdict)
+            << " codec=" << r.codecVerdict << " validation=" << r.validationVerdict
+            << " committed_rev=" << r.committedRevision << " deltas=" << r.deltas.size() << "\n";
+        lastSeq = r.seq;
         ++count;
     }
+    out << "next=" << lastSeq << " done=" << (more ? 0 : 1);
     return out.str();
 }
 

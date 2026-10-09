@@ -217,7 +217,9 @@ def resolve_binary_path(binary_arg: Path) -> Path:
 
 
 def build_launch_command(binary: Path, socket_arg: Path) -> list[str]:
-    return [str(binary), "-agent_bridge", str(socket_arg)]
+    # -nointro: the logo video sequencer only advances while frames are presented, so an
+    # unattended (locked-screen / occluded) run would never reach the main menu.
+    return [str(binary), "-agent_bridge", str(socket_arg), "-nointro"]
 
 
 def is_quit_command(verb: str, payload: str) -> bool:

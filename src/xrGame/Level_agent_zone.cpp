@@ -1,6 +1,9 @@
 #include "StdAfx.h"
 #include "Level.h"
 #include "xrServer_Objects_ALife_Monsters.h"
+#include "alife_simulator.h"
+#include "xrServer.h"
+#include "xrNetServer/NET_Messages.h"
 #include "ai_space.h"
 #include "xrAICore/Navigation/game_graph.h"
 #include "xrAICore/Navigation/level_graph.h"
@@ -13,7 +16,58 @@
 #include "CameraFirstEye.h"
 #include "script_game_object.h"
 #include "ai/monsters/basemonster/base_monster.h"
+#include "CustomMonster.h"
+#include "memory_manager.h"
+#include "enemy_manager.h"
 #include "CharacterPhysicsSupport.h"
+
+namespace
+{
+// CScriptEntity::GetCurrentEnemy() is only overridden by CBaseMonster; stalkers keep
+// their selected enemy in the memory manager, so ask the right place for each class.
+bool LiveHasEnemy(IGameObject* netObj)
+{
+    if (CBaseMonster* monster = smart_cast<CBaseMonster*>(netObj))
+        return monster->GetCurrentEnemy() != nullptr;
+    if (CCustomMonster* custom = smart_cast<CCustomMonster*>(netObj))
+        return custom->memory().enemy().selected() != nullptr;
+    return false;
+}
+
+// Exact node under the position when there is one, otherwise the nearest node on the
+// whole level graph (objective targets are coarse anchors, not guaranteed AI nodes).
+u32 NearestLevelVertex(const Fvector& position)
+{
+    if (!ai().get_level_graph())
+        return u32(-1);
+    const CLevelGraph& graph = ai().level_graph();
+    u32 vertex = u32(-1);
+    if (graph.valid_vertex_position(position))
+        vertex = graph.vertex_id(position);
+    // vertex_id() can answer 0 (a valid id) for a cell with no node, so only trust an
+    // exact hit that really sits under the position.
+    if (graph.valid_vertex_id(vertex))
+    {
+        const float cell = graph.header().cell_size();
+        if (graph.vertex_position(vertex).distance_to_xz_sqr(position) <= cell * cell)
+            return vertex;
+        vertex = u32(-1);
+    }
+
+    const u32 vertexCount = graph.header().vertex_count();
+    float bestDistSqr = flt_max;
+    for (u32 i = 0; i < vertexCount; ++i)
+    {
+        const float distSqr = graph.vertex_position(i).distance_to_xz_sqr(position);
+        if (distSqr < bestDistSqr)
+        {
+            bestDistSqr = distSqr;
+            vertex = i;
+        }
+    }
+    return vertex;
+}
+} // namespace
 
 xrSim::ReadPositionResult CLevel::CapturePlayerOrigin()
 {
@@ -59,9 +113,9 @@ xrSim::SpawnGroupResult CLevel::SpawnGroup(const xrSim::LiveSpawnRequest& reques
         request.position.zCm / 100.f
     };
 
-    u32 baseVertex = 0xffffffffu;
-    if (ai().level_graph().valid_vertex_position(anchorPos))
-        baseVertex = ai().level_graph().vertex_id(anchorPos);
+    // No AI node exactly under the anchor (hill, debris, building): take the nearest
+    // node anywhere on the level graph. Spawn-time only, so the full scan is acceptable.
+    u32 baseVertex = NearestLevelVertex(anchorPos);
 
     if (!ai().level_graph().valid_vertex_id(baseVertex))
     {
@@ -192,11 +246,28 @@ xrSim::LiveAdapterResult CLevel::DestroyObjects(const std::vector<uint16_t>& obj
     if (!Server)
         return { false, "server_unavailable" };
 
+    // Same path as alife():release(): offline objects go through the ALife registry,
+    // online objects get a GE_DESTROY event so client and server (and children) go
+    // together. xrServer::entity_Destroy alone leaves the live object standing.
     for (const uint16_t id : objectIds)
     {
         CSE_Abstract* obj = Server->ID_to_entity(id);
-        if (obj)
-            Server->entity_Destroy(obj);
+        if (!obj)
+            continue;
+
+        CSE_ALifeObject* alifeObj = smart_cast<CSE_ALifeObject*>(obj);
+        if (ai().get_alife() && alifeObj && !alifeObj->m_bOnline)
+        {
+            const_cast<CALifeSimulator*>(ai().get_alife())->release(obj, true);
+            continue;
+        }
+
+        NET_Packet packet;
+        packet.w_begin(M_EVENT);
+        packet.w_u32(timeServer());
+        packet.w_u16(GE_DESTROY);
+        packet.w_u16(id);
+        Send(packet, net_flags(TRUE, TRUE));
     }
     return { true, "" };
 }
@@ -206,6 +277,13 @@ xrSim::LiveAdapterResult CLevel::ApplyObjective(
 {
     Fvector target;
     target.set(command.target.xCm / 100.f, command.target.yCm / 100.f, command.target.zCm / 100.f);
+
+    // Resolve the objective anchor to a real AI node once; a position-only goal would
+    // otherwise be resolved by a local search from each member and degrade to one step.
+    const u32 targetVertex = NearestLevelVertex(target);
+    if (!ai().get_level_graph() || !ai().level_graph().valid_vertex_id(targetVertex))
+        return { false, "no_level_vertex_for_objective_target" };
+    target = ai().level_graph().vertex_position(targetVertex);
 
     for (const uint16_t id : binding.objectIds)
     {
@@ -222,7 +300,7 @@ xrSim::LiveAdapterResult CLevel::ApplyObjective(
         if (monster)
             monster->set_custom_panic_threshold(0.0f);
 
-        if (scriptEntity->GetCurrentEnemy())
+        if (LiveHasEnemy(netObj))
         {
             if (scriptEntity->GetScriptControl() &&
                 xr_strcmp(scriptEntity->GetScriptControlName(), "xrSim") == 0)
@@ -239,14 +317,18 @@ xrSim::LiveAdapterResult CLevel::ApplyObjective(
 
         if (smart_cast<CBaseMonster*>(gameObj))
         {
-            CScriptMovementAction movement(MonsterSpace::eMA_WalkFwd, &target, 2.f);
+            CScriptMovementAction movement(MonsterSpace::eMA_WalkFwd, targetVertex, &target, 2.f);
             action.SetAction(movement);
         }
         else
         {
+            // Speed must stay 0: a non-zero script speed switches the stalker movement
+            // manager into script-velocity mode, which skips path building entirely.
             CScriptMovementAction movement(MonsterSpace::eBodyStateStand,
                 MonsterSpace::eMovementTypeWalk, DetailPathManager::eDetailPathTypeSmooth,
-                &target, 1.f);
+                &target, 0.f);
+            movement.m_tGoalType = CScriptMovementAction::eGoalTypePathNodePosition;
+            movement.m_tNodeID = targetVertex;
             action.SetAction(movement);
         }
         scriptEntity->AddAction(&action, true);
@@ -278,8 +360,7 @@ xrSim::ObserveGroupResult CLevel::ObserveGroup(const xrSim::LiveBinding& binding
             centroid.add(aliveObj->Position());
             totalHealth += aliveObj->conditions().GetHealth();
 
-            CScriptEntity* se = smart_cast<CScriptEntity*>(aliveObj);
-            if (se && se->GetCurrentEnemy())
+            if (LiveHasEnemy(netObj))
                 inCombat = true;
         }
     }

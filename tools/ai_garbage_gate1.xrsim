@@ -1,6 +1,6 @@
 xrsim_zone_manifest_v1
 scenario=garbage_gate1
-save=radik zagirov - to garbage
+save=garbage_gate1
 level=l02_garbage
 seed=14072026
 origin=player

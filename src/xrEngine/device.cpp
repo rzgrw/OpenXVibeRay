@@ -109,6 +109,32 @@ void CRenderDevice::RenderEnd(void)
     mProjectSaved = mProject;
 }
 
+// Agent-bridge sessions: the load precache normally counts down in RenderEnd,
+// which never runs while the window cannot present (on macOS the GL backend
+// reports the device lost while the window is occluded, e.g. locked screen).
+// Finish the countdown without submitting GPU work so loading completes and
+// the simulation can be driven headless. Normal play is unaffected.
+static void PrecacheWithoutPresent(CRenderDevice& device)
+{
+    if (!g_agent_bridge || !device.dwPrecacheFrame || !device.b_is_Active)
+        return;
+    if (GEnv.Render->GetDeviceState() != DeviceState::Lost)
+        return;
+
+    device.dwPrecacheFrame--;
+    if (device.dwPrecacheFrame)
+        return;
+
+    if (precache_light)
+    {
+        precache_light->set_active(false);
+        precache_light.destroy();
+    }
+    GEnv.Sound->set_master_volume(1.f);
+    Msg("* End of synchronization without present (agent bridge, window not presentable) A[%d] R[%d]",
+        device.b_is_Active, device.b_is_Ready);
+}
+
 void CRenderDevice::PreCache(u32 amount, bool wait_user_input)
 {
     if (GEnv.isDedicatedServer)
@@ -254,6 +280,7 @@ void CRenderDevice::DoRender()
     else
     {
         UpdateViewports();
+        PrecacheWithoutPresent(*this);
     }
     renderTotalReal.End();
     renderTotalReal.FrameEnd();

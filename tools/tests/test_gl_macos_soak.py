@@ -203,7 +203,7 @@ class SocketWaitTests(unittest.TestCase):
 
         self.assertEqual(game_dir / socket_arg, resolve_socket_path(game_dir, socket_arg))
         self.assertEqual(
-            ["/tmp/xr_3da", "-agent_bridge", "appdata/agent_bridge.sock"],
+            ["/tmp/xr_3da", "-agent_bridge", "appdata/agent_bridge.sock", "-nointro"],
             build_launch_command(Path("/tmp/xr_3da"), socket_arg),
         )
 

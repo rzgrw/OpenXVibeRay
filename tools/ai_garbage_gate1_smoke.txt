@@ -1,0 +1,49 @@
+# Gate 1 Garbage vertical slice smoke (deterministic, no API key).
+# Loads the real Garbage save, bootstraps the version-controlled manifest, moves every scope
+# observe -> shadow -> AI-owned, lets the runtime materialize the manifest groups on the level,
+# wakes the stalker squad and dog pack minds through the off-frame scheduler (the keyless
+# provider coasts), injects one deterministic objective per group so the live executor steers
+# them, then reads status/bindings/metrics/ledger/snapshot and takes a screenshot.
+# Run: python3 tools/gl_macos_soak.py --game-dir /Users/rz/stalkercoc --scenario tools/ai_garbage_gate1_smoke.txt --artifacts artifacts/ai_garbage_gate1_smoke
+hello
+state
+sleep 5
+# Headless-safe loading: no 'press any key' sequencer (its timeline only advances while frames present).
+cmd keypress_on_start 0
+cmd start server(garbage_gate1/single/alife/load) client(localhost)
+sleep 45
+state
+cmd g_god on
+agent.zone.bootstrap /Users/rz/OpenXVibeRay/tools/ai_garbage_gate1.xrsim
+agent.zone.start
+agent.zone.status
+agent.zone.agents
+agent.zone.shadow all
+agent.zone.transfer all
+agent.zone.authority
+sleep 2
+agent.zone.status
+agent.zone.bindings
+agent.zone.wake 201 gate1_smoke
+agent.zone.wake 203 gate1_smoke
+sleep 2
+agent.zone.intent 201 stalker_squad move scrapyard_center 600
+agent.zone.intent 203 garbage_dogs hold mutant_den 600
+agent.zone.intent 202 bandit_squad hold bandit_camp 600
+sleep 3
+agent.zone.status
+agent.zone.bindings
+sleep 10
+agent.zone.status
+agent.zone.bindings
+agent.zone.metrics
+agent.zone.ledger
+agent.zone.snapshot
+shot gate1_after_transfer
+sleep 1
+state
+# Reset releases objectives and destroys every object the runtime spawned.
+agent.zone.reset
+sleep 2
+agent.zone.status
+cmd quit

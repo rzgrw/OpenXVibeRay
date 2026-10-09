@@ -140,9 +140,8 @@ MaterializeResult Materializer::Bootstrap(const ZoneState& world, uint32_t spawn
 }
 
 MaterializeResult Materializer::ApplyCommittedState(
-    const ZoneState& world, uint32_t commandBudget, uint64_t currentTick)
+    const ZoneState& world, uint32_t commandBudget, uint64_t currentTick, uint64_t calmReacquireTicks)
 {
-    (void)currentTick;
     uint32_t applied = 0;
 
     for (const auto& obj : world.Objectives())
@@ -161,6 +160,12 @@ MaterializeResult Materializer::ApplyCommittedState(
         }
 
         if (!targetBinding || targetBinding->activePlanId == obj.planId)
+            continue;
+
+        // Legacy combat AI owns the group while it fights, and for a calm window afterwards.
+        if (targetBinding->tacticalCombat)
+            continue;
+        if (targetBinding->calmSinceTick > 0 && currentTick < targetBinding->calmSinceTick + calmReacquireTicks)
             continue;
 
         if (applied >= commandBudget)
@@ -205,18 +210,38 @@ ObservationBatch Materializer::PollObservations(const ZoneState& world, uint64_t
         if (!grp)
             continue;
 
-        WorldEvent event;
-        event.seq = eventSeq++;
-        event.tick = currentTick;
-        event.kind = "group_alive_count_observed";
-        event.subject = b.group;
-        event.amount = int32_t(obs.aliveCount);
-        event.source = "live_observation";
-        batch.events.push_back(event);
+        // The alive count is canonical state, not a stream: report it when it changes
+        // and as a bounded heartbeat, so the event log does not grow once per tick.
+        constexpr uint64_t kAliveHeartbeatTicks = 40;
+        if (obs.aliveCount != b.lastAliveCount || currentTick - b.lastObservationTick >= kAliveHeartbeatTicks)
+        {
+            WorldEvent event;
+            event.seq = eventSeq++;
+            event.tick = currentTick;
+            event.kind = "group_alive_count_observed";
+            event.subject = b.group;
+            event.amount = int32_t(obs.aliveCount);
+            event.source = "live_observation";
+            batch.events.push_back(event);
+            b.lastAliveCount = obs.aliveCount;
+            b.lastObservationTick = currentTick;
+        }
 
         if (obs.inCombat != b.tacticalCombat)
         {
             b.tacticalCombat = obs.inCombat;
+            if (obs.inCombat)
+            {
+                // Hand the group back to the live combat AI; the committed plan stays
+                // canonical and is re-applied once the group has been calm long enough.
+                m_adapter.ReleaseObjective(b);
+                b.activePlanId = 0;
+                b.calmSinceTick = 0;
+            }
+            else
+            {
+                b.calmSinceTick = currentTick;
+            }
             WorldEvent combatEvent;
             combatEvent.seq = eventSeq++;
             combatEvent.tick = currentTick;

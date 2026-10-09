@@ -8,6 +8,7 @@
 #include "xrSim/xrSimWakeScheduler.h"
 #include "xrSim/xrSimMaterialization.h"
 #include "xrSim/xrSimZoneRuntime.h"
+#include "xrSim/xrSimAgentProvider.h"
 
 #include <fstream>
 #include <iostream>
@@ -389,6 +390,8 @@ class FakeLiveAdapter final : public xrSim::IAgentZoneLiveAdapter
 public:
     uint32_t spawnCalls = 0;
     uint32_t objectiveCalls = 0;
+    uint32_t releaseCalls = 0;
+    bool inCombat = false;
     xrSim::ReadPositionResult CapturePlayerOrigin() override
     {
         return { true, "", { 0, 0, 0, 0xffffffffu } };
@@ -424,10 +427,11 @@ public:
     }
     xrSim::ObserveGroupResult ObserveGroup(const xrSim::LiveBinding& binding) override
     {
-        return { true, "", static_cast<uint32_t>(binding.objectIds.size()), false, {}, 100 };
+        return { true, "", static_cast<uint32_t>(binding.objectIds.size()), inCombat, {}, 100 };
     }
     xrSim::LiveAdapterResult ReleaseObjective(const xrSim::LiveBinding&) override
     {
+        ++releaseCalls;
         return { true, "" };
     }
     xrSim::LiveAdapterResult SetPlayerAt(const xrSim::FixedPosition&) override
@@ -466,6 +470,51 @@ bool TestMaterializerFeedsObservedAliveCountBackAsEvent()
     return Expect(batch.ok, "observation poll succeeds") &&
         Expect(!batch.events.empty(), "live results return as observed events") &&
         Expect(batch.events.front().source == "live_observation", "outcome source is explicit");
+}
+
+bool TestMaterializerHandsOffCombatAndReacquiresWhenCalm()
+{
+    xrSim::ZoneState world;
+    world.Bootstrap(xrSim::ParseZoneManifest(kManifest).manifest);
+    FakeLiveAdapter adapter;
+    xrSim::Materializer materializer(adapter);
+    while (!materializer.Bootstrap(world, 2).complete) {}
+
+    xrSim::ObjectiveRecord objective;
+    objective.planId = 7;
+    objective.subjectKind = xrSim::ObjectiveSubjectKind::Group;
+    objective.subject = world.FindGroupByName("bandit_squad");
+    objective.subjectName = "bandit_squad";
+    objective.kind = xrSim::ObjectiveKind::Move;
+    objective.target = world.FindLocationByName("scrapyard_center");
+    objective.expiresAtTick = 1000;
+    objective.author = xrSim::ObjectiveAuthor::Ai;
+    objective.active = true;
+    world.MutableObjectives().push_back(objective);
+
+    materializer.ApplyCommittedState(world, 2, 10, 4);
+    if (!Expect(adapter.objectiveCalls == 1, "calm group receives the committed objective"))
+        return false;
+
+    adapter.inCombat = true;
+    xrSim::ObservationBatch entered = materializer.PollObservations(world, 11);
+    materializer.ApplyCommittedState(world, 2, 11, 4);
+    bool sawEnter = false;
+    for (const auto& ev : entered.events)
+        sawEnter = sawEnter || ev.kind == "combat_entered";
+    // The fake adapter reports combat for every bound group, so all three are released.
+    if (!Expect(sawEnter && adapter.releaseCalls == 3, "combat entry releases the objective to the live AI"))
+        return false;
+    if (!Expect(adapter.objectiveCalls == 1, "no objective is re-applied while fighting"))
+        return false;
+
+    adapter.inCombat = false;
+    materializer.PollObservations(world, 12);
+    materializer.ApplyCommittedState(world, 2, 13, 4);
+    if (!Expect(adapter.objectiveCalls == 1, "objective is not reacquired before the calm window"))
+        return false;
+    materializer.ApplyCommittedState(world, 2, 16, 4);
+    return Expect(adapter.objectiveCalls == 2, "same committed plan is reacquired once calm");
 }
 
 bool TestZoneRuntimeCommitsOnlyAtTickBoundary()
@@ -520,6 +569,95 @@ bool TestZoneRuntimeStaleCompletionSchedulesFreshWake()
         Expect(runtime.Metrics().freshWakesAfterStale == 1, "fresh revision wake queued");
 }
 
+bool TestBridgeVerbsDriveLiveRuntimeWithoutKey()
+{
+    FakeLiveAdapter adapter;
+    xrSim::ZoneRuntime runtime;
+    bool ok = true;
+
+    std::string out = runtime.HandleBridgeVerb("agent.zone.bootstrap", "tools/ai_garbage_gate1.xrsim", ok);
+    if (!Expect(ok && out.find("groups=3") != std::string::npos, "bridge bootstrap parses the Gate 1 manifest"))
+        return false;
+    out = runtime.HandleBridgeVerb("agent.zone.start", "", ok);
+    if (!Expect(!ok && out == "live_adapter_not_attached", "start without a live adapter fails as a value"))
+        return false;
+    out = runtime.HandleBridgeVerb("agent.zone.wake", "201 early", ok);
+    if (!Expect(!ok && out == "wake_rejected: live_adapter_not_attached", "wake before attach is rejected"))
+        return false;
+
+    xrSim::AgentProviderConfig providerConfig;
+    providerConfig.apiKey.clear();
+    xrSim::ZoneRuntimeConfig config;
+    config.scheduler.minCooldownMs = 0;
+    if (!Expect(runtime.AttachLive(adapter, config, xrSim::CreateLiveWorldIntentProvider(providerConfig)).ok,
+            "live adapter attaches to a bootstrapped runtime"))
+        return false;
+    out = runtime.HandleBridgeVerb("agent.zone.start", "", ok);
+    if (!Expect(ok && out == "running", "start runs once attached"))
+        return false;
+    out = runtime.HandleBridgeVerb("agent.zone.shadow", "all", ok);
+    if (!Expect(ok && out.find("shadowed=9") != std::string::npos, "shadow uses the split verb/payload form"))
+        return false;
+    out = runtime.HandleBridgeVerb("agent.zone.transfer", "all", ok);
+    if (!Expect(ok && out.find("transferred=9") != std::string::npos, "transfer uses the split verb/payload form"))
+        return false;
+
+    uint64_t now = 1000;
+    for (uint64_t frame = 0; frame < 5; ++frame)
+    {
+        now += 250;
+        runtime.OnFrame(now, frame);
+    }
+    if (!Expect(adapter.spawnCalls == 3 && runtime.LiveMaterializer() &&
+            runtime.LiveMaterializer()->Bindings().size() == 3,
+            "manifest groups materialize one group per tick"))
+        return false;
+
+    out = runtime.HandleBridgeVerb("agent.zone.wake", "201 debug_wake", ok);
+    if (!Expect(ok && out.rfind("request=", 0) == 0, "wake schedules through the runtime scheduler"))
+        return false;
+    now += 250;
+    runtime.OnFrame(now, 10);
+    runtime.Scheduler().WaitForIdleForTest(500);
+    now += 250;
+    runtime.OnFrame(now, 11);
+    if (!Expect(runtime.Ledger().Requests().size() == 1 &&
+            runtime.Ledger().Requests().front().providerVerdict == xrSim::ProviderVerdict::Coast &&
+            runtime.Ledger().Requests().front().codecVerdict == "missing_api_key",
+            "keyless wake coasts and is recorded in the ledger"))
+        return false;
+    if (!Expect(runtime.Metrics().providerCoasts == 1, "coast is counted"))
+        return false;
+
+    out = runtime.HandleBridgeVerb("agent.zone.intent", "201 stalker_squad move scrapyard_center 100", ok);
+    if (!Expect(ok && out.rfind("queued request=", 0) == 0, "deterministic intent is queued"))
+        return false;
+    const uint64_t before = runtime.World().Revision();
+    now += 250;
+    runtime.OnFrame(now, 12);
+    if (!Expect(runtime.World().Revision() == before + 1 && runtime.Metrics().acceptedIntents == 1,
+            "injected intent commits at the tick boundary"))
+        return false;
+    if (!Expect(adapter.objectiveCalls == 1 && adapter.lastObjectiveIds.size() == 3,
+            "committed objective reaches the bound live group"))
+        return false;
+    if (!Expect(runtime.Ledger().Requests().back().provider == "bridge_inject",
+            "injected intent is attributed in the ledger"))
+        return false;
+
+    out = runtime.HandleBridgeVerb("agent.zone.status", "", ok);
+    if (!Expect(ok && out.find("bound=3") != std::string::npos && out.find("materialized=1") != std::string::npos,
+            "status reports live bindings"))
+        return false;
+    out = runtime.HandleBridgeVerb("agent.zone.ledger", "", ok);
+    if (!Expect(ok && out.find("done=1") != std::string::npos, "ledger page is terminated"))
+        return false;
+
+    runtime.DetachLive(false);
+    out = runtime.HandleBridgeVerb("agent.zone.start", "", ok);
+    return Expect(!ok && out == "live_adapter_not_attached", "detached runtime refuses to run");
+}
+
 bool TestFileManifestCreatesEveryGateOneMind()
 {
     std::ifstream input("tools/ai_garbage_gate1.xrsim");
@@ -561,8 +699,10 @@ int main()
     ok = TestSchedulerOpensCircuitAfterThreeFailures() && ok;
     ok = TestMaterializerNeverDuplicatesStableGroup() && ok;
     ok = TestMaterializerFeedsObservedAliveCountBackAsEvent() && ok;
+    ok = TestMaterializerHandsOffCombatAndReacquiresWhenCalm() && ok;
     ok = TestZoneRuntimeCommitsOnlyAtTickBoundary() && ok;
     ok = TestZoneRuntimeStaleCompletionSchedulesFreshWake() && ok;
+    ok = TestBridgeVerbsDriveLiveRuntimeWithoutKey() && ok;
     ok = TestFileManifestCreatesEveryGateOneMind() && ok;
     return ok ? 0 : 1;
 }

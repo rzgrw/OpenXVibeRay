@@ -43,6 +43,7 @@ struct LiveBinding
     uint64_t boundRevision = 0;
     uint64_t activePlanId = 0;
     uint64_t lastObservationTick = 0;
+    uint32_t lastAliveCount = 0xffffffffu;
     bool tacticalCombat = false;
     uint64_t calmSinceTick = 0;
 };
@@ -149,7 +150,11 @@ public:
     explicit Materializer(IAgentZoneLiveAdapter& adapter);
 
     MaterializeResult Bootstrap(const ZoneState& world, uint32_t spawnBudget);
-    MaterializeResult ApplyCommittedState(const ZoneState& world, uint32_t commandBudget, uint64_t currentTick);
+    // Combat handoff: a group that entered tactical combat has its objective released
+    // (legacy AI is authoritative while an enemy exists) and the committed plan is
+    // re-applied only after it has been calm for calmReacquireTicks ticks.
+    MaterializeResult ApplyCommittedState(const ZoneState& world, uint32_t commandBudget, uint64_t currentTick,
+        uint64_t calmReacquireTicks = 20);
     ObservationBatch PollObservations(const ZoneState& world, uint64_t currentTick);
 
     const LiveBinding* FindBinding(Handle group) const;
