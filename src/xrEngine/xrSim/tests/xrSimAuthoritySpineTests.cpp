@@ -10,6 +10,8 @@
 #include "xrSim/xrSimZoneRuntime.h"
 #include "xrSim/xrSimAgentProvider.h"
 
+#include <chrono>
+#include <thread>
 #include <fstream>
 #include <iostream>
 #include <sstream>
